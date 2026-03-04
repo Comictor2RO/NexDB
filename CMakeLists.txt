@@ -41,4 +41,6 @@ add_executable(Mini_Database_Engine
         AST/Row/Row.hpp
         StringUtils/StringUtils.hpp
         Engine/Engine.cpp
-        Engine/Engine.hpp)
+        Engine/Engine.hpp
+        Indexing/RowPtr/RowPtr.hpp
+        Indexing/BPlusTree/NodeHeader/NodeHeader.h)

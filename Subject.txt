@@ -36,18 +36,18 @@ PROGRES
         - PageManager (readPage, writePage, insertRow, getAllRows)
     • Catalog
         - createTable, tableExists, getColumns
+    • Table
+        - leagă Catalog + PageManager
+        - API simplu pentru operatii pe tabele (insert/select/delete)
+    • Engine
+        - execută Statements peste Table/PageManager
+        - leagă parser-ul de storage (end‑to‑end DB functional)
 
 [✗] LIPSESTE:
-    • Table         (leaga Catalog + PageManager)
-    • Engine        (executa statements, leaga TOTUL)
     • B+ Tree Index
     • Page Cache (LRU)
     • Write-Ahead Logging (WAL)
     • RayLib GUI
-
-[□] EXTENSII HARD MODE:
-    • Query planner + cost estimation
-    • Concurenta (MVCC simplificat)
 
 ============================================================
 ROADMAP
