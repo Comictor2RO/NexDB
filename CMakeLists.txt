@@ -1,7 +1,12 @@
-cmake_minimum_required(VERSION 4.1)
+cmake_minimum_required(VERSION 3.16)
 project(Mini_Database_Engine)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
+
+# RayLib instalat local
+set(RAYLIB_DIR "C:/raylib/raylib/src")
+include_directories(${RAYLIB_DIR})
+link_directories(${RAYLIB_DIR})
 
 include_directories(AST/Condition)
 include_directories(AST/DeleteStatement)
@@ -47,4 +52,9 @@ add_executable(Mini_Database_Engine
         Indexing/BPlusTree/BPlusTree.cpp
         Indexing/BPlusTree/BPlusTree.hpp
         Storage/LRUCache/LRUCache.hpp
-        Storage/LRUCache/LRUCache.cpp)
+        Storage/LRUCache/LRUCache.cpp
+        WALManager/WALManager.hpp
+        WALManager/WALManager.cpp
+)
+
+target_link_libraries(Mini_Database_Engine PRIVATE raylib opengl32 gdi32 winmm)

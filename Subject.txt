@@ -58,8 +58,14 @@ PROGRES
         - flushAll() in destructorul PageManager garanteaza persistenta
         - clear() folosit in clearAll() pentru reset fara scriere pe disc
 
+[✓] Write-Ahead Logging (WAL)
+        - WALEntry (type, table, rowData, committed)
+        - WALManager (logInsert, commit, recover, readLog)
+        - integrat in Engine: logInsert inainte de INSERT, commit dupa
+        - recover() apelat automat in constructorul Engine la pornire
+        - testat: date recuperate corect dupa crash simulat
+
 [✗] LIPSESTE:
-    • Write-Ahead Logging (WAL)
     • RayLib GUI
 
 ============================================================
@@ -69,7 +75,7 @@ ROADMAP
   Saptamana 1:  Table + Engine       -> DB functional end-to-end  [DONE]
   Saptamana 2:  B+ Tree Index        -> cautare rapida             [DONE]
   Saptamana 3:  Page Cache LRU       -> optimizare I/O              [DONE]
-  Saptamana 4:  WAL                  -> durabilitate
+  Saptamana 4:  WAL                  -> durabilitate               [DONE]
   Final:        RayLib GUI           -> interfata grafica
 
 ============================================================

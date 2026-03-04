@@ -1,7 +1,9 @@
 #include "Engine.hpp"
 
-Engine::Engine(Catalog &catalog) : catalog(catalog)
-{}
+Engine::Engine(Catalog &catalog) : catalog(catalog), wal("engine.wal")
+{
+    wal.recover(*this);
+}
 
 void Engine::execute(Statement *statement)
 {
@@ -24,12 +26,22 @@ void Engine::executeCreate(const CreateStatement &stmt)
 
 void Engine::executeInsert(const InsertStatement &stmt)
 {
-    std::vector<Columns> scheme = catalog.getColumns(stmt.getTable()); //Takes the columns for the catalog with the name ...
-    Table table(stmt.getTable(), scheme); //creates a table obj with the name ... and its catalog
+    std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
+    Table table(stmt.getTable(), scheme);
 
     Row row;
     row.values = stmt.getValues();
+
+    std::string rowData;
+    for (int i = 0; i < (int)row.values.size(); i++)
+    {
+        if (i > 0) rowData += "|";
+        rowData += row.values[i];
+    }
+
+    wal.logInsert(stmt.getTable(), rowData);
     table.insertRow(row);
+    wal.commit();
 }
 
 void Engine::executeSelect(const SelectStatement &stmt)
