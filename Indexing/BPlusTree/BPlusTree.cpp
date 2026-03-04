@@ -55,12 +55,16 @@ void BPlusTree::splitLeaf(BPlusNode *leaf, BPlusNode *parent, int index)
     }
     else
     {
-        parent->keys.insert(parent->keys.begin() + index, promovateKey);
-        parent->children.insert(parent->children.begin() + index + 1, right);
+        int parentIdx = 0;
+        while (parentIdx < (int)parent->keys.size() && promovateKey > parent->keys[parentIdx])
+            parentIdx++;
+
+        parent->keys.insert(parent->keys.begin() + parentIdx, promovateKey);
+        parent->children.insert(parent->children.begin() + parentIdx + 1, right);
         right->parent = parent;
 
         if ((int)parent->keys.size() > order)
-            splitInternal(parent, parent->parent, index);
+            splitInternal(parent, parent->parent, parentIdx);
     }
 }
 
@@ -96,12 +100,16 @@ void BPlusTree::splitInternal(BPlusNode* node, BPlusNode* parent, int index)
     }
     else
     {
+        int parentIdx = 0;
+        while (parentIdx < (int)parent->keys.size() && promovateKey > parent->keys[parentIdx])
+            parentIdx++;
+
         right->parent = parent;
-        parent->keys.insert(parent->keys.begin() + index, promovateKey);
-        parent->children.insert(parent->children.begin() + index + 1, right);
+        parent->keys.insert(parent->keys.begin() + parentIdx, promovateKey);
+        parent->children.insert(parent->children.begin() + parentIdx + 1, right);
 
         if ((int)parent->keys.size() > order)
-            splitInternal(parent, parent->parent, index);
+            splitInternal(parent, parent->parent, parentIdx);
     }
 }
 

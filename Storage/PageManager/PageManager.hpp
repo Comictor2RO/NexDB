@@ -1,6 +1,7 @@
 #ifndef PAGEMANAGER_HPP
 #define PAGEMANAGER_HPP
 
+#include "../LRUCache/LRUCache.hpp"
 #include "../Page/Page.hpp"
 #include <string>
 #include <iostream>
@@ -27,6 +28,7 @@ class PageManager {
         std::string filename;
         std::fstream file;
         int numberOfPages;
+        LRUCache cache;
 
         Page readPage(int pageId);
         void writePage(int pageId, const Page &page);

@@ -45,4 +45,6 @@ add_executable(Mini_Database_Engine
         Indexing/IndexRecord/IndexRecord.hpp
         Indexing/BPlusNode/BPlusNode.hpp
         Indexing/BPlusTree/BPlusTree.cpp
-        Indexing/BPlusTree/BPlusTree.hpp)
+        Indexing/BPlusTree/BPlusTree.hpp
+        Storage/LRUCache/LRUCache.hpp
+        Storage/LRUCache/LRUCache.cpp)

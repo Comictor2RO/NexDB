@@ -49,9 +49,16 @@ PROGRES
         - integrat in Table: cautare O(log n) pe prima coloana INT
         - rebuild automat al indexului la crearea obiectului Table
         - reset + rebuild la DELETE
+    • Page Cache LRU
+        - CacheEntry (page, isDirty)
+        - LRUCache (get, put, evict, clear, flushAll)
+        - std::list pentru ordinea LRU + std::unordered_map pentru O(1) lookup
+        - integrat in PageManager: readPage verifica cache inainte de disc
+        - writePage scrie in cache cu isDirty=true, nu direct pe disc
+        - flushAll() in destructorul PageManager garanteaza persistenta
+        - clear() folosit in clearAll() pentru reset fara scriere pe disc
 
 [✗] LIPSESTE:
-    • Page Cache (LRU)
     • Write-Ahead Logging (WAL)
     • RayLib GUI
 
@@ -61,7 +68,7 @@ ROADMAP
 
   Saptamana 1:  Table + Engine       -> DB functional end-to-end  [DONE]
   Saptamana 2:  B+ Tree Index        -> cautare rapida             [DONE]
-  Saptamana 3:  Page Cache LRU       -> optimizare I/O
+  Saptamana 3:  Page Cache LRU       -> optimizare I/O              [DONE]
   Saptamana 4:  WAL                  -> durabilitate
   Final:        RayLib GUI           -> interfata grafica
 
