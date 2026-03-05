@@ -36,6 +36,10 @@ PROGRES
         - PageManager (readPage, writePage, insertRow, getAllRows)
     • Catalog
         - createTable, tableExists, getColumns
+        - persistență: schema salvată în catalog.dat, încărcată la pornire
+        - la load(): se păstrează doar tabelele al căror fișier .db există;
+          dacă ștergi emp.db, la repornire emp dispare din catalog și din catalog.dat
+          (nu se mai recreează emp.db la SELECT * FROM emp)
     • Table
         - leaga Catalog + PageManager
         - API simplu pentru operatii pe tabele (insert/select/delete)

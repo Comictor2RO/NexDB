@@ -2,6 +2,7 @@
 #include "../StringUtils/StringUtils.hpp"
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 
 const char* Catalog::CATALOG_FILE = "catalog.dat";
 
@@ -56,9 +57,11 @@ void Catalog::load()
                 cols.push_back(c);
             }
         }
-        if (!cols.empty())
+        // Păstrăm în catalog doar tabelele al căror fișier .db există (dacă ai șters emp.db, emp dispare)
+        if (!cols.empty() && std::filesystem::exists(tableName + ".db"))
             columns[tableName] = cols;
     }
+    save(); // actualizează catalog.dat fără tabelele ale căror .db au fost șterse
 }
 
 void Catalog::save()

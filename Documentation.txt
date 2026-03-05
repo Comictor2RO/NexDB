@@ -124,10 +124,23 @@ Catalog/
 
 Catalog
     Rol: Tine schema bazei: map nume_tabela -> lista de coloane (Columns).
+    Persistență: schema se salvează în catalog.dat (același folder cu .exe / cwd).
+    La pornire: load() citește catalog.dat; se adaugă în catalog doar tabelele
+    al căror fișier .db există (std::filesystem::exists(nume + ".db")). La final
+    load() apelează save(), astfel catalog.dat rămâne sincronizat cu discul:
+    dacă ai șters emp.db, la repornire emp nu mai e încărcat și e șters și din
+    catalog.dat, deci SELECT * FROM emp dă "table does not exist" (nu se recreează emp.db).
+
     Metode:
-        createTable(name, columns) — adauga tabela daca nu exista.
+        Catalog() — constructor; apelează load().
+        createTable(name, columns) — adauga tabela daca nu exista; apelează save().
         tableExists(name) — true/false.
         getColumns(name) — returneaza vector<Columns>; gol daca tabela nu exista.
+    Private:
+        CATALOG_FILE — "catalog.dat".
+        load() — deschide catalog.dat; pentru fiecare linie (format: nume|col1 tip1|col2 tip2|...),
+                 parsează și adaugă în columns doar dacă există nume.db; la final apelează save().
+        save() — rescrie catalog.dat cu toate tabelele din columns.
 
 ----------------------------------------------------------------
 Table/
