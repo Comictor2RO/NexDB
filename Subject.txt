@@ -81,16 +81,20 @@ NEXT TO DO
 UPDATE – UPDATE tabel SET col = val WHERE cond (AST, parser, Table::updateRow, integrare în Engine).
 DROP TABLE – ștergere tabelă + fișier .db și curățare din catalog (l-ai avut, l-ai scos; e util pentru curățenie).
 CREATE INDEX (opțional) – index pe o coloană aleasă, nu doar pe prima INT.
+
 Robustețe și validare
 Validare tipuri – la INSERT/UPDATE verificare că valorile respectă schema (INT numeric, VARCHAR ok); mesaje de eroare clare.
 Cheie primară / UNIQUE – în schema (Columns) flag primaryKey sau unique; respingere INSERT cu duplicate.
+
 GUI
 Font custom – LoadFontEx / DrawTextEx peste tot (îl menționaseși).
 Istoric query – săgeți sus/jos în input pentru comenzi anterioare.
 Highlight SQL – culori diferite pentru keywords, stringuri, numere în zona de input.
+
 Date și operare
 Tranzacții – BEGIN / COMMIT / ROLLBACK; WAL deja există, tranzacțiile țin mai multe operații în log până la commit.
 Paginație la rezultate – pentru SELECT cu multe rânduri (prev/next page în panoul de rezultate).
+
 Dezvoltare și CV
 Teste automate – un singur executable de teste (fără GUI) care rulează CREATE/INSERT/SELECT/DELETE (și UPDATE/DROP dacă le adaugi) și verifică rezultatele; util și pentru regresii.
 Export CSV – buton/shortcut în GUI: exportă rezultatele SELECT curent într-un .csv

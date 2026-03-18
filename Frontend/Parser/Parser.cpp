@@ -42,91 +42,215 @@ bool Parser::expectToken(TokenType type, const std::string &value)
         return false;
 }
 
-CreateStatement *Parser::parseCreate() {
-    consumeToken(); //Jumps over CREATE
-    consumeToken(); //Jumps over TABLE
-    std::string table = consumeToken().value; //Saves table name
-
+CreateStatement *Parser::parseCreate()
+{
+    std::string table;
     std::vector<Columns> columns;
 
-    consumeToken(); //Jumps over (
+    if (!expectToken(TokenType::KEYWORD, "CREATE"))
+        return nullptr;
 
-    while (currentToken().value != ")" && currentToken().type != TokenType::END_OF_FILE)
+    if (!expectToken(TokenType::KEYWORD, "TABLE"))
+        return nullptr;
+
+    table = expectToken(TokenType::IDENTIFIER);
+    if (table == "")
+        return nullptr;
+
+    if (!expectToken(TokenType::PUNCTUATION, "("))
+        return nullptr;
+
+    while (true)
     {
+        if (currentToken().type == TokenType::END_OF_FILE)
+            return nullptr;
+
+        if (currentToken().value == ")")
+            break;
+
+        Columns col;
+
+        col.name = expectToken(TokenType::IDENTIFIER);
+        if (col.name == "")
+            return nullptr;
+
+        col.type = expectToken(TokenType::KEYWORD);
+        if (col.type != "INT" && col.type != "STRING")
+            return nullptr;
+
+        columns.push_back(col);
+
         if (currentToken().value == ",")
         {
-            consumeToken(); //Jumps over ,
+            consumeToken(); // consume comma
+            if (currentToken().value == ")")
+                return nullptr; // reject trailing comma
             continue;
         }
-        Columns col;
-        col.name = consumeToken().value; //Column name  ex: "id"
-        col.type = consumeToken().value; //Column type  ex: "INT"
-        columns.push_back(col);
+
+        if (currentToken().value == ")")
+            break;
+
+        return nullptr;
     }
 
-    consumeToken(); //Jumps over )
+    if (columns.empty())
+        return nullptr;
 
-    return new CreateStatement(table, columns);
+    if (!expectToken(TokenType::PUNCTUATION, ")"))
+        return nullptr;
+
+    if (currentToken().type == TokenType::END_OF_FILE)
+        return new CreateStatement(table, columns);
+    else
+        return nullptr;
 }
 
 SelectStatement *Parser::parseSelect()
 {
-    consumeToken(); //Jumps over SELECT
-
     std::vector<std::string> columns;
     std::string table;
 
-    while (currentToken().value != "FROM" && currentToken().type != TokenType::END_OF_FILE) //Checks until find FROM
-    {
-        if (currentToken().value == ",")
-            consumeToken(); //Skips the punctuation
-        else
-            columns.push_back(consumeToken().value); //Saves the columns
-    }
+    if (!expectToken(TokenType::KEYWORD, "SELECT"))
+        return nullptr;
 
-    consumeToken(); //Jumps over FROM
-    table = consumeToken().value; //Name of the table
+    if (expectToken(TokenType::WILDCARD, "*"))
+        columns.push_back("*");
+    else
+    {
+        while (true)
+        {
+            std::string column = expectToken(TokenType::IDENTIFIER);
+            if (column == "")
+                return nullptr;
+            columns.push_back(column);
+            if (currentToken().value == ",")
+            {
+                consumeToken();
+                if (currentToken().type != TokenType::IDENTIFIER)
+                    return nullptr;
+            }
+            else
+                break;
+        }
+    }
+    if (!expectToken(TokenType::KEYWORD, "FROM"))
+        return nullptr;
+
+    table = expectToken(TokenType::IDENTIFIER);
+    if (table == "")
+        return nullptr;
 
     Condition *condition = nullptr;
-    if (currentToken().value == "WHERE") //Checks if there is a condition
-    {
-        consumeToken(); //Jumps over WHERE
-        condition = parseCondition(); //Saves the condition
+    if (expectToken(TokenType::KEYWORD, "WHERE")) {
+        condition = parseCondition();
+        if (condition == nullptr)
+            return nullptr;
     }
 
-    return new SelectStatement(columns, table, condition);
+    if (currentToken().type == TokenType::END_OF_FILE)
+        return new SelectStatement(columns, table, condition);
+    else
+        return nullptr;
 }
 
 InsertStatement *Parser::parseInsert()
 {
-    consumeToken();
-    consumeToken();
-
-    std::string table = consumeToken().value; //Save table name
+    std::string table;
     std::vector<std::string> values;
     std::vector<std::string> columns;
-    while (currentToken().value != "VALUES" && currentToken().type != TokenType::END_OF_FILE)
+
+    if (!expectToken(TokenType::KEYWORD, "INSERT"))
+        return nullptr;
+
+    if (!expectToken(TokenType::KEYWORD, "INTO"))
+        return nullptr;
+
+    table = expectToken(TokenType::IDENTIFIER);
+    if (table == "")
+        return nullptr;
+
+    if (expectToken(TokenType::PUNCTUATION, "("))
     {
-        if (currentToken().value == "," || currentToken().value == ")" || currentToken().value == "(")
-            consumeToken(); //Jumps over punctuation
-        else
-            columns.push_back(consumeToken().value); //Saves the columns
+        while (true) {
+            std::string col = expectToken(TokenType::IDENTIFIER);
+            if (col == "")
+                return nullptr;
+            columns.push_back(col);
+            if (currentToken().value == ",")
+            {
+                consumeToken();
+                if (currentToken().type != TokenType::IDENTIFIER)
+                    return nullptr;
+            }
+            else if (currentToken().value == ")")
+                break;
+            else
+                return nullptr;
+        }
+        if (columns.empty())
+            return nullptr;
+
+        if (!expectToken(TokenType::PUNCTUATION, ")"))
+            return nullptr;
     }
 
-    if (currentToken().value != "VALUES")
-        return nullptr; // Sintaxa corecta: INSERT INTO table [ (col1,...) ] VALUES (val1,...)
-
-    consumeToken(); //Jumps over VALUES
-
-    while (currentToken().type != TokenType::END_OF_FILE)
+    if (expectToken(TokenType::KEYWORD, "VALUES"))
     {
-        if (currentToken().type == TokenType::PUNCTUATION)
-            consumeToken(); //Jumps over punctuation
-        else
-            values.push_back(consumeToken().value); //Saves the values
-    }
+        if (expectToken(TokenType::PUNCTUATION, "("))
+        {
+            while (true)
+            {
+                std::string val;
+                if (currentToken().type == TokenType::NUMBER)
+                {
+                    val = expectToken(TokenType::NUMBER);
+                    if (val == "")
+                        return nullptr;
 
-    return new InsertStatement(table, columns, values);
+                    values.push_back(val);
+                }
+                else if (currentToken().type == TokenType::STRING)
+                {
+                    val = expectToken(TokenType::STRING);
+                    if (val == "")
+                        return nullptr;
+
+                    values.push_back(val);
+                }
+                else if (currentToken().type == TokenType::IDENTIFIER)
+                {
+                    val = expectToken(TokenType::IDENTIFIER);
+                    if (val == "")
+                        return nullptr;
+
+                    values.push_back(val);
+                }
+
+
+                if (currentToken().value == ")")
+                    break;
+                else if (currentToken().value == ",")
+                    consumeToken();
+                else
+                    return nullptr;
+            }
+            if (values.empty())
+                return nullptr;
+
+            if (!expectToken(TokenType::PUNCTUATION, ")"))
+                return nullptr;
+        }
+        else
+            return nullptr;
+    }
+    else
+        return nullptr;
+
+    if (currentToken().type == TokenType::END_OF_FILE)
+        return new InsertStatement(table, columns, values);
+    else
+        return nullptr;
 }
 
 DeleteStatement *Parser::parseDelete()
@@ -144,28 +268,16 @@ DeleteStatement *Parser::parseDelete()
                 if (expectToken(TokenType::KEYWORD, "WHERE"))
                     condition = parseCondition();
 
-                return new DeleteStatement(table, condition);
+                if (currentToken().type == TokenType::END_OF_FILE)
+                    return new DeleteStatement(table, condition);
+                else
+                    return nullptr;
             }
         }
         else
             return nullptr;
     }
     return nullptr;
-    /*
-    consumeToken(); //Jumps over DELETE
-    consumeToken(); //Jumps over FROM
-
-    std::string table = consumeToken().value;
-
-    Condition *condition = nullptr;
-    if (currentToken().value == "WHERE")
-    {
-        consumeToken(); //Jumps over WHERE
-        condition = parseCondition(); //Saves the condition
-    }
-
-    return new DeleteStatement(table, condition);
-    */
 }
 
 DropStatement *Parser::parseDrop()
@@ -178,7 +290,11 @@ DropStatement *Parser::parseDrop()
             if (table == "")
                 return nullptr;
             else
-                return new DropStatement(table);
+            {
+                if (currentToken().type == TokenType::END_OF_FILE)
+                    return new DropStatement(table);
+                return nullptr;
+            }
         }
         else
             return nullptr;
@@ -242,17 +358,6 @@ Condition *Parser::parseCondition()
                 return nullptr;
         }
     }
-    /*
-    std::string column = consumeToken().value;
-    std::string op = consumeToken().value;
-    std::string value = consumeToken().value;
-
-    Condition *condition = new Condition();
-    condition->column = column;
-    condition->value = value;
-    condition->op = op;
-    return condition;
-    */
 }
 
 Statement *Parser::parse()

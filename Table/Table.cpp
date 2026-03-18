@@ -101,11 +101,13 @@ std::vector<Row> Table::selectRow(Condition *cond)
 void Table::deleteRow(Condition *cond)
 {
     std::vector<Row> allRows = selectRow(nullptr);
-
     std::vector<Row> toKeep;
+
     for (const auto &row : allRows)
     {
-        if (cond == nullptr || !evaluateCondition(cond, row, scheme))
+        if (cond == nullptr)
+            ;
+        if (cond != nullptr && evaluateCondition(cond, row, scheme))
             toKeep.push_back(row);
     }
 

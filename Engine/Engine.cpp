@@ -1,4 +1,6 @@
 #include "Engine.hpp"
+
+#include <algorithm>
 #include <stdexcept>
 
 Engine::Engine(Catalog &catalog) : catalog(catalog), wal("engine.wal")
@@ -51,11 +53,37 @@ void Engine::executeSelect(const SelectStatement &stmt)
     Table table(stmt.getTable(), scheme);
 
     std::vector<Row> rows = table.selectRow(stmt.getCondition());
+    const std::vector<std::string> &selectedColumns = stmt.getColumns();
 
     for (const auto &row : rows)
     {
-        for (const auto &val : row.values)
-            std::cout << val << "|";
+        if (selectedColumns.size() == 1 && selectedColumns[0] == "*")
+        {
+            for (const auto &val : row.values)
+                std::cout << val << "|";
+            std::cout << std::endl;
+            continue;
+        }
+
+        for (int i = 0; i < (int)selectedColumns.size(); i++)
+        {
+            auto it = std::find_if(scheme.begin(), scheme.end(),
+                                   [&](const Columns &c)
+                                   {
+                                       return c.name == selectedColumns[i];
+                                   });
+
+            if (it == scheme.end())
+                throw std::runtime_error("Column " + selectedColumns[i] + " does not exist in table " + stmt.getTable() + ".");
+
+            int colIndex = (int)std::distance(scheme.begin(), it);
+            if (colIndex >= 0 && colIndex < (int)row.values.size())
+            {
+                if (i > 0)
+                    std::cout << "|";
+                std::cout << row.values[colIndex];
+            }
+        }
         std::cout << std::endl;
     }
 }
@@ -89,7 +117,54 @@ std::vector<Row> Engine::query(const std::string &sql)
 
         std::vector<Columns> scheme = catalog.getColumns(s->getTable());
         Table table(s->getTable(), scheme);
-        results = table.selectRow(s->getCondition());
+        std::vector<Row> allRows = table.selectRow(s->getCondition());
+        const std::vector<std::string> &selectedColumns = s->getColumns();
+
+        if (selectedColumns.size() == 1 && selectedColumns[0] == "*")
+        {
+            results = allRows;
+        }
+        else
+        {
+            for (const auto &selectedColumn : selectedColumns)
+            {
+                bool found = false;
+                for (const auto &col : scheme)
+                {
+                    if (col.name == selectedColumn)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    delete stmt;
+                    throw std::runtime_error("Column " + selectedColumn + " does not exist in table " + s->getTable() + ".");
+                }
+            }
+
+            for (const auto &row : allRows)
+            {
+                Row projectedRow;
+
+                for (const auto &selectedColumn : selectedColumns)
+                {
+                    auto it = std::find_if(scheme.begin(), scheme.end(),
+                                           [&](const Columns &c)
+                                           {
+                                               return c.name == selectedColumn;
+                                           });
+
+                    int colIndex = (int)std::distance(scheme.begin(), it);
+                    if (colIndex >= 0 && colIndex < (int)row.values.size())
+                        projectedRow.values.push_back(row.values[colIndex]);
+                }
+
+                results.push_back(projectedRow);
+            }
+        }
     }
     else if (InsertStatement *ins = dynamic_cast<InsertStatement*>(stmt))
     {
