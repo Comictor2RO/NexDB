@@ -19,6 +19,29 @@ Token Parser::consumeToken()
     return t;
 }
 
+std::string Parser::expectToken(TokenType type)
+{
+    std::string value;
+    if (currentToken().type == type)
+    {
+        value = currentToken().value;
+        consumeToken();
+        return value;
+    }
+    return "";
+}
+
+bool Parser::expectToken(TokenType type, const std::string &value)
+{
+    if (currentToken().type == type && currentToken().value == value)
+    {
+        consumeToken();
+        return true;
+    }
+    else
+        return false;
+}
+
 CreateStatement *Parser::parseCreate() {
     consumeToken(); //Jumps over CREATE
     consumeToken(); //Jumps over TABLE
@@ -108,6 +131,27 @@ InsertStatement *Parser::parseInsert()
 
 DeleteStatement *Parser::parseDelete()
 {
+    if (expectToken(TokenType::KEYWORD, "DELETE"))
+    {
+        if (expectToken(TokenType::KEYWORD, "FROM"))
+        {
+            std::string table = expectToken(TokenType::IDENTIFIER);
+            if (table == "")
+                return nullptr;
+            else
+            {
+                Condition *condition = nullptr;
+                if (expectToken(TokenType::KEYWORD, "WHERE"))
+                    condition = parseCondition();
+
+                return new DeleteStatement(table, condition);
+            }
+        }
+        else
+            return nullptr;
+    }
+    return nullptr;
+    /*
     consumeToken(); //Jumps over DELETE
     consumeToken(); //Jumps over FROM
 
@@ -121,10 +165,84 @@ DeleteStatement *Parser::parseDelete()
     }
 
     return new DeleteStatement(table, condition);
+    */
+}
+
+DropStatement *Parser::parseDrop()
+{
+    if (expectToken(TokenType::KEYWORD, "DROP"))
+    {
+        if (expectToken(TokenType::KEYWORD, "TABLE"))
+        {
+            std::string table = expectToken(TokenType::IDENTIFIER);
+            if (table == "")
+                return nullptr;
+            else
+                return new DropStatement(table);
+        }
+        else
+            return nullptr;
+    }
+    else
+        return nullptr;
 }
 
 Condition *Parser::parseCondition()
 {
+    std::string column = expectToken(TokenType::IDENTIFIER);
+    if (column == "")
+        return nullptr;
+    else
+    {
+        std::string op = expectToken(TokenType::OPERATOR);
+        if (op == "")
+            return nullptr;
+        else
+        {
+            if (currentToken().type == TokenType::STRING)
+            {
+                std::string value = expectToken(TokenType::STRING);
+                if (value == "")
+                    return nullptr;
+                else {
+                    Condition *condition = new Condition();
+                    condition->column = column;
+                    condition->op = op;
+                    condition->value = value;
+                    return condition;
+                }
+            }
+            else if (currentToken().type == TokenType::NUMBER)
+            {
+                std::string value = expectToken(TokenType::NUMBER);
+                if (value == "")
+                    return nullptr;
+                else {
+                    Condition *condition = new Condition();
+                    condition->column = column;
+                    condition->op = op;
+                    condition->value = value;
+                    return condition;
+                }
+            }
+            else if (currentToken().type == TokenType::IDENTIFIER)
+            {
+                std::string value = expectToken(TokenType::IDENTIFIER);
+                if (value == "")
+                    return nullptr;
+                else {
+                    Condition *condition = new Condition();
+                    condition->column = column;
+                    condition->op = op;
+                    condition->value = value;
+                    return condition;
+                }
+            }
+            else
+                return nullptr;
+        }
+    }
+    /*
     std::string column = consumeToken().value;
     std::string op = consumeToken().value;
     std::string value = consumeToken().value;
@@ -134,6 +252,7 @@ Condition *Parser::parseCondition()
     condition->value = value;
     condition->op = op;
     return condition;
+    */
 }
 
 Statement *Parser::parse()
@@ -150,5 +269,7 @@ Statement *Parser::parse()
         return parseDelete();
     if (token.value == "CREATE")
         return parseCreate();
+    if (token.value == "DROP")
+        return parseDrop();
     return nullptr;
 }

@@ -57,11 +57,11 @@ void Catalog::load()
                 cols.push_back(c);
             }
         }
-        // Păstrăm în catalog doar tabelele al căror fișier .db există (dacă ai șters emp.db, emp dispare)
+        // We are keeping in .dat only the files .db which exists
         if (!cols.empty() && std::filesystem::exists(tableName + ".db"))
             columns[tableName] = cols;
     }
-    save(); // actualizează catalog.dat fără tabelele ale căror .db au fost șterse
+    save(); // update .dat
 }
 
 void Catalog::save()

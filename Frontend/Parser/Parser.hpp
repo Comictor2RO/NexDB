@@ -8,6 +8,8 @@
 #include "../../AST/CreateStatement/CreateStatement.hpp"
 #include <vector>
 
+#include "../../AST/DropStatement/DropStatement.hpp"
+
 class Parser {
     public:
         Parser(const std::vector<Token> &tokens);
@@ -18,11 +20,14 @@ class Parser {
 
         Token currentToken();
         Token consumeToken();
+        std::string expectToken(TokenType type);
+        bool expectToken(TokenType type, const std::string &value);
 
         CreateStatement *parseCreate();
         SelectStatement *parseSelect();
         InsertStatement *parseInsert();
         DeleteStatement *parseDelete();
+        DropStatement *parseDrop();
         Condition *parseCondition();
 };
 

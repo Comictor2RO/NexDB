@@ -59,6 +59,8 @@ add_executable(Mini_Database_Engine
         WALManager/WALManager.cpp
         GUI/GUI.hpp
         GUI/GUI.cpp
+        AST/DropStatement/DropStatement.cpp
+        AST/DropStatement/DropStatement.hpp
 )
 
 # Legare statică a runtime C++/GCC - .exe nu mai are nevoie de libstdc++-6.dll / libgcc_s
