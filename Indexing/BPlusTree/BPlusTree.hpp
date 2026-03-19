@@ -15,7 +15,7 @@ class BPlusTree
 
     private:
         int order;
-        BPlusNode* root;
+        std::unique_ptr<BPlusNode> root;
 
         BPlusNode* findLeaf(int key);
         void deleteNode(BPlusNode* node);

@@ -99,7 +99,7 @@ Valgrind/ASan pentru detect leaks/OOB; fuzzing pe Lexer cu random input.
 Alte Îmbunătățiri
 Configurabil: PAGESIZE, B+ order via flags; LRU cache mai agresiv.
 Logging: spdlog pentru trace/debug; metrics (query time, hit rate).
-​
+
 GUI
 Font custom – LoadFontEx / DrawTextEx peste tot (îl menționaseși).
 Istoric query – săgeți sus/jos în input pentru comenzi anterioare.
