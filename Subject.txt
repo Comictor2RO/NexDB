@@ -22,27 +22,28 @@ PROGRES
         - CreateStatement
         - Condition
         - Columns
+        - DropStatement
     • Lexer
         - TokenType, Token (fisiere separate)
         - Tokenizare completa: keywords, identifiers,
           numbers, strings, operators, punctuation, wildcard
     • Parser
         - parseSelect, parseInsert, parseDelete, parseCreate
-        - parseCondition
+        - parseCondition, parseDrop
         - validare query invalid
     • Storage
         - PageHeader
         - Page (addRow, getRows, hasSpace, getRowCount)
         - PageManager (readPage, writePage, insertRow, getAllRows)
     • Catalog
-        - createTable, tableExists, getColumns
+        - createTable, tableExists, getColumns, dropTable
         - persistență: schema salvată în catalog.dat, încărcată la pornire
         - la load(): se păstrează doar tabelele al căror fișier .db există;
           dacă ștergi emp.db, la repornire emp dispare din catalog și din catalog.dat
           (nu se mai recreează emp.db la SELECT * FROM emp)
     • Table
         - leaga Catalog + PageManager
-        - API simplu pentru operatii pe tabele (insert/select/delete)
+        - API simplu pentru operatii pe tabele (insert/select/delete/drop)
     • Engine
         - executa Statements peste Table/PageManager
         - leaga parser-ul de storage (end-to-end DB functional)
@@ -77,9 +78,9 @@ PROGRES
 
 ============================================================
 NEXT TO DO
-============================================================Completare limbaj SQL
+============================================================
+Completare limbaj SQL
 UPDATE – UPDATE tabel SET col = val WHERE cond (AST, parser, Table::updateRow, integrare în Engine).
-DROP TABLE – ștergere tabelă + fișier .db și curățare din catalog (l-ai avut, l-ai scos; e util pentru curățenie).
 CREATE INDEX (opțional) – index pe o coloană aleasă, nu doar pe prima INT.
 
 Robustețe și validare
