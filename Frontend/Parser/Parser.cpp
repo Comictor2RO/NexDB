@@ -1,5 +1,4 @@
 #include "Parser.hpp"
-#include <expected>
 
 Parser::Parser(const std::vector<Token> &tokens)
     : tokens(tokens), position(0)
@@ -87,9 +86,9 @@ std::expected<CreateStatement*, ParseError> Parser::parseCreate() {
     }
 
     if (columns.empty())
-        return std::unexpected(ParseError::InvalidType);  // Sau EmptyColumns dacă adaugi
+        return std::unexpected(ParseError::EmptyColumns);
 
-    consumeToken();  // )  // Mută aici pentru siguranță
+    consumeToken();  // consume ')'
 
     if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
@@ -124,24 +123,26 @@ std::expected<SelectStatement*, ParseError> Parser::parseSelect() {
                 break;
         }
     }
+    
     if (!expectToken(TokenType::KEYWORD, "FROM"))
         return std::unexpected(ParseError::MissingKeyword);
 
     table = expectToken(TokenType::IDENTIFIER);
-    if (table == "")
+    if (table.empty())
         return std::unexpected(ParseError::InvalidIdentifier);
 
     Condition *condition = nullptr;
     if (expectToken(TokenType::KEYWORD, "WHERE")) {
-        condition = parseCondition();
-        if (condition == nullptr)
-            return std::unexpected(ParseError::UnexpectedToken);
+        auto condRes = parseCondition();
+        if (!condRes)
+            return std::unexpected(condRes.error());
+        condition = condRes.value();
     }
 
-    if (currentToken().type == TokenType::END_OF_FILE)
-        return new SelectStatement(columns, table, condition);
-    else
+    if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
+
+    return new SelectStatement(columns, table, condition);
 }
 
 std::expected<InsertStatement*, ParseError> Parser::parseInsert()
@@ -157,14 +158,14 @@ std::expected<InsertStatement*, ParseError> Parser::parseInsert()
         return std::unexpected(ParseError::MissingKeyword);
 
     table = expectToken(TokenType::IDENTIFIER);
-    if (table == "")
+    if (table.empty())
         return std::unexpected(ParseError::InvalidIdentifier);
 
     if (expectToken(TokenType::PUNCTUATION, "("))
     {
         while (true) {
             std::string col = expectToken(TokenType::IDENTIFIER);
-            if (col == "")
+            if (col.empty())
                 return std::unexpected(ParseError::InvalidIdentifier);
             columns.push_back(col);
             if (currentToken().value == ",")
@@ -185,132 +186,105 @@ std::expected<InsertStatement*, ParseError> Parser::parseInsert()
             return std::unexpected(ParseError::MissingPunctuation);
     }
 
-    if (expectToken(TokenType::KEYWORD, "VALUES"))
-    {
-        if (expectToken(TokenType::PUNCTUATION, "("))
-        {
-            while (true)
-            {
-                std::string val;
-                if (currentToken().type == TokenType::NUMBER)
-                {
-                    val = expectToken(TokenType::NUMBER);
-                    if (val == "")
-                        return std::unexpected(ParseError::UnexpectedToken);
-
-                    values.push_back(val);
-                }
-                else if (currentToken().type == TokenType::STRING)
-                {
-                    val = expectToken(TokenType::STRING);
-                    if (val == "")
-                        return std::unexpected(ParseError::UnexpectedToken);
-
-                    values.push_back(val);
-                }
-                else if (currentToken().type == TokenType::IDENTIFIER)
-                {
-                    val = expectToken(TokenType::IDENTIFIER);
-                    if (val == "")
-                        return std::unexpected(ParseError::UnexpectedToken);
-
-                    values.push_back(val);
-                }
-                else
-                    return std::unexpected(ParseError::UnexpectedToken);
-
-                if (currentToken().value == ")")
-                    break;
-                else if (currentToken().value == ",")
-                    consumeToken();
-                else
-                    return std::unexpected(ParseError::UnexpectedToken);
-            }
-            if (values.empty())
-                return std::unexpected(ParseError::EmptyColumns);
-
-            if (!expectToken(TokenType::PUNCTUATION, ")"))
-                return std::unexpected(ParseError::MissingPunctuation);
-        }
-        else
-            return std::unexpected(ParseError::MissingPunctuation);
-    }
-    else
+    if (!expectToken(TokenType::KEYWORD, "VALUES"))
         return std::unexpected(ParseError::MissingKeyword);
 
-    // Bonus validare (opțional în enum: ValuesMismatch)
+    if (!expectToken(TokenType::PUNCTUATION, "("))
+        return std::unexpected(ParseError::MissingPunctuation);
+
+    while (true)
+    {
+        std::string val;
+        if (currentToken().type == TokenType::NUMBER)
+            val = expectToken(TokenType::NUMBER);
+        else if (currentToken().type == TokenType::STRING)
+            val = expectToken(TokenType::STRING);
+        else if (currentToken().type == TokenType::IDENTIFIER)
+            val = expectToken(TokenType::IDENTIFIER);
+        
+        if (val.empty())
+            return std::unexpected(ParseError::UnexpectedToken);
+
+        values.push_back(val);
+
+        if (currentToken().value == ")")
+            break;
+        else if (currentToken().value == ",")
+            consumeToken();
+        else
+            return std::unexpected(ParseError::UnexpectedToken);
+    }
+    
+    if (values.empty())
+        return std::unexpected(ParseError::EmptyColumns);
+
+    if (!expectToken(TokenType::PUNCTUATION, ")"))
+        return std::unexpected(ParseError::MissingPunctuation);
+
     if (!columns.empty() && values.size() != columns.size())
         return std::unexpected(ParseError::ValuesMismatch);
 
-    if (currentToken().type == TokenType::END_OF_FILE)
-        return new InsertStatement(table, columns, values);
-    else
+    if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
+
+    return new InsertStatement(table, columns, values);
 }
 
 std::expected<DeleteStatement*, ParseError> Parser::parseDelete()
 {
-    if (expectToken(TokenType::KEYWORD, "DELETE"))
-    {
-        if (expectToken(TokenType::KEYWORD, "FROM"))
-        {
-            std::string table = expectToken(TokenType::IDENTIFIER);
-            if (table == "")
-                return std::unexpected(ParseError::InvalidIdentifier);
-            else
-            {
-                Condition *condition = nullptr;
-                if (expectToken(TokenType::KEYWORD, "WHERE"))
-                    condition = parseCondition();  // TODO: safe dacă refactor
+    if (!expectToken(TokenType::KEYWORD, "DELETE"))
+        return std::unexpected(ParseError::MissingKeyword);
 
-                if (currentToken().type == TokenType::END_OF_FILE)
-                    return new DeleteStatement(table, condition);
-                else
-                    return std::unexpected(ParseError::ExtraTokens);
-            }
-        }
-        else
-            return std::unexpected(ParseError::MissingKeyword);
+    if (!expectToken(TokenType::KEYWORD, "FROM"))
+        return std::unexpected(ParseError::MissingKeyword);
+
+    std::string table = expectToken(TokenType::IDENTIFIER);
+    if (table.empty())
+        return std::unexpected(ParseError::InvalidIdentifier);
+
+    Condition *condition = nullptr;
+    if (expectToken(TokenType::KEYWORD, "WHERE")) {
+        auto condRes = parseCondition();
+        if (!condRes)
+            return std::unexpected(condRes.error());
+        condition = condRes.value();
     }
-    return std::unexpected(ParseError::MissingKeyword);
+
+    if (currentToken().type != TokenType::END_OF_FILE)
+        return std::unexpected(ParseError::ExtraTokens);
+
+    return new DeleteStatement(table, condition);
 }
 
 std::expected<DropStatement*, ParseError> Parser::parseDrop()
 {
-    if (expectToken(TokenType::KEYWORD, "DROP"))
-    {
-        if (expectToken(TokenType::KEYWORD, "TABLE"))
-        {
-            std::string table = expectToken(TokenType::IDENTIFIER);
-            if (table == "")
-                return std::unexpected(ParseError::InvalidIdentifier);
-            else
-            {
-                if (currentToken().type == TokenType::END_OF_FILE)
-                    return new DropStatement(table);
-                return std::unexpected(ParseError::ExtraTokens);
-            }
-        }
-        else
-            return std::unexpected(ParseError::MissingKeyword);
-    }
-    else
+    if (!expectToken(TokenType::KEYWORD, "DROP"))
         return std::unexpected(ParseError::MissingKeyword);
+
+    if (!expectToken(TokenType::KEYWORD, "TABLE"))
+        return std::unexpected(ParseError::MissingKeyword);
+
+    std::string table = expectToken(TokenType::IDENTIFIER);
+    if (table.empty())
+        return std::unexpected(ParseError::InvalidIdentifier);
+
+    if (currentToken().type != TokenType::END_OF_FILE)
+        return std::unexpected(ParseError::ExtraTokens);
+
+    return new DropStatement(table);
 }
 
-UpdateStatement *Parser::parseUpdate()
+std::expected<UpdateStatement*, ParseError> Parser::parseUpdate()
 {
-    std::string table;
-    std::vector<std::pair<std::string, std::string>> assignments;
     if (!expectToken(TokenType::KEYWORD, "UPDATE"))
-        return nullptr;
+        return std::unexpected(ParseError::MissingKeyword);
 
-    table = expectToken(TokenType::IDENTIFIER);
+    std::string table = expectToken(TokenType::IDENTIFIER);
     if (table.empty())
-        return nullptr;
+        return std::unexpected(ParseError::InvalidIdentifier);
 
     if (!expectToken(TokenType::KEYWORD, "SET"))
-        return nullptr;
+        return std::unexpected(ParseError::MissingKeyword);
 
     auto *stmt = new UpdateStatement(table);
     while (true)
@@ -319,13 +293,13 @@ UpdateStatement *Parser::parseUpdate()
         if (column.empty())
         {
             delete stmt;
-            return nullptr;
+            return std::unexpected(ParseError::InvalidIdentifier);
         }
 
         if (!expectToken(TokenType::OPERATOR, "="))
         {
             delete stmt;
-            return nullptr;
+            return std::unexpected(ParseError::UnexpectedToken);
         }
 
         std::string value = expectToken(TokenType::STRING);
@@ -336,7 +310,7 @@ UpdateStatement *Parser::parseUpdate()
         if (value.empty())
         {
             delete stmt;
-            return nullptr;
+            return std::unexpected(ParseError::UnexpectedToken);
         }
 
         stmt->addAssignements(column, value);
@@ -349,81 +323,59 @@ UpdateStatement *Parser::parseUpdate()
 
     if (expectToken(TokenType::KEYWORD, "WHERE"))
     {
-        Condition *condition = parseCondition();
-        if (!condition)
+        auto condRes = parseCondition();
+        if (!condRes)
         {
             delete stmt;
-            return nullptr;
+            return std::unexpected(condRes.error());
         }
-        stmt->setCondition(condition);
+        stmt->setCondition(condRes.value());
+    }
+
+    if (currentToken().type != TokenType::END_OF_FILE)
+    {
+        delete stmt;
+        return std::unexpected(ParseError::ExtraTokens);
     }
 
     return stmt;
 }
 
-Condition *Parser::parseCondition()
+std::expected<Condition*, ParseError> Parser::parseCondition()
 {
     std::string column = expectToken(TokenType::IDENTIFIER);
-    if (column == "")
-        return nullptr;
-    else
-    {
-        std::string op = expectToken(TokenType::OPERATOR);
-        if (op == "")
-            return nullptr;
-        else
-        {
-            if (currentToken().type == TokenType::STRING)
-            {
-                std::string value = expectToken(TokenType::STRING);
-                if (value == "")
-                    return nullptr;
-                else {
-                    Condition *condition = new Condition();
-                    condition->column = column;
-                    condition->op = op;
-                    condition->value = value;
-                    return condition;
-                }
-            }
-            else if (currentToken().type == TokenType::NUMBER)
-            {
-                std::string value = expectToken(TokenType::NUMBER);
-                if (value == "")
-                    return nullptr;
-                else {
-                    Condition *condition = new Condition();
-                    condition->column = column;
-                    condition->op = op;
-                    condition->value = value;
-                    return condition;
-                }
-            }
-            else if (currentToken().type == TokenType::IDENTIFIER)
-            {
-                std::string value = expectToken(TokenType::IDENTIFIER);
-                if (value == "")
-                    return nullptr;
-                else {
-                    Condition *condition = new Condition();
-                    condition->column = column;
-                    condition->op = op;
-                    condition->value = value;
-                    return condition;
-                }
-            }
-            else
-                return nullptr;
-        }
-    }
+    if (column.empty())
+        return std::unexpected(ParseError::InvalidIdentifier);
+
+    std::string op = expectToken(TokenType::OPERATOR);
+    if (op.empty())
+        return std::unexpected(ParseError::UnexpectedToken);
+
+    std::string value;
+    if (currentToken().type == TokenType::STRING)
+        value = expectToken(TokenType::STRING);
+    else if (currentToken().type == TokenType::NUMBER)
+        value = expectToken(TokenType::NUMBER);
+    else if (currentToken().type == TokenType::IDENTIFIER)
+        value = expectToken(TokenType::IDENTIFIER);
+    
+    if (value.empty())
+        return std::unexpected(ParseError::UnexpectedToken);
+
+    Condition *condition = new Condition();
+    condition->column = column;
+    condition->op = op;
+    condition->value = value;
+    return condition;
 }
 
-std::expected<Statement *, ParseError> Parser::parse()
+std::expected<Statement*, ParseError> Parser::parse()
 {
     Token token = currentToken();
 
     if (token.type != TokenType::KEYWORD)
-        return nullptr;
+        return std::unexpected(ParseError::MissingKeyword);
+    
     if (token.value == "SELECT")
         return parseSelect();
     if (token.value == "INSERT")
@@ -436,5 +388,6 @@ std::expected<Statement *, ParseError> Parser::parse()
         return parseDrop();
     if (token.value == "UPDATE")
         return parseUpdate();
-    return nullptr;
+    
+    return std::unexpected(ParseError::UnexpectedToken);
 }
