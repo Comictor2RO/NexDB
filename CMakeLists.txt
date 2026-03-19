@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(Mini_Database_Engine)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 # Executabilul in bin/ - uneori Windows nu blocheaza cai noi
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 

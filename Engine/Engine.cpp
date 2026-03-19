@@ -128,7 +128,12 @@ std::vector<Row> Engine::query(const std::string &sql)
     Lexer lexer(sql);
     std::vector<Token> tokens = lexer.tokenize();
     Parser parser(tokens);
-    Statement *stmt = parser.parse();
+
+    auto result = parser.parse();
+    if (!result) {
+        throw std::runtime_error("Parse error in query: " + std::to_string((int)result.error()));
+    }
+    Statement *stmt = result.value();
 
     std::vector<Row> results;
 

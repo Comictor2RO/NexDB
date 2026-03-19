@@ -85,7 +85,12 @@ void WALManager::recover(Engine &engine)
             Lexer lexer(sql);
             std::vector<Token> tokens = lexer.tokenize();
             Parser parser(tokens);
-            Statement *stmt = parser.parse();
+            auto result = parser.parse();
+            if (!result) {
+                std::cerr << "WAL parse error: " << (int)result.error() << std::endl;
+                continue;  // Sau return/break
+            }
+            Statement *stmt = result.value();
             if (stmt)
             {
                 engine.execute(stmt);

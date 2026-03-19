@@ -9,11 +9,24 @@
 #include "../../AST/DropStatement/DropStatement.hpp"
 #include "../../AST/UpdateStatement/UpdateStatement.hpp"
 #include <vector>
+#include <expected>
+
+enum class ParseError {
+    UnexpectedToken, MissingKeyword, MissingPunctuation, InvalidIdentifier,
+    InvalidType, EmptyColumns, ValuesMismatch, TrailingComma, ExtraTokens,
+    END_OF_FILE
+};
+
+struct ParseResult {
+    bool success;
+    ParseError error = ParseError::UnexpectedToken;
+    std::string message;
+};
 
 class Parser {
     public:
         Parser(const std::vector<Token> &tokens);
-        Statement *parse();
+        std::expected<Statement *, ParseError>parse();
     private:
         std::vector<Token> tokens;
         int position;
@@ -23,13 +36,13 @@ class Parser {
         std::string expectToken(TokenType type);
         bool expectToken(TokenType type, const std::string &value);
 
-        CreateStatement *parseCreate();
-        SelectStatement *parseSelect();
-        InsertStatement *parseInsert();
-        DeleteStatement *parseDelete();
-        DropStatement *parseDrop();
-        UpdateStatement *parseUpdate();
-        Condition *parseCondition();
+        std::expected<CreateStatement *, ParseError>parseCreate();
+        std::expected<SelectStatement *, ParseError>parseSelect();
+        std::expected<InsertStatement *, ParseError>parseInsert();
+        std::expected<DeleteStatement *, ParseError>parseDelete();
+        std::expected<DropStatement *, ParseError>parseDrop();
+        std::expected<UpdateStatement *, ParseError>parseUpdate();
+        std::expected<Condition *, ParseError>parseCondition();
 };
 
 
