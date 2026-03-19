@@ -11,9 +11,7 @@ SelectStatement::SelectStatement(std::vector<std::string> columns, std::string t
 
 //Execute
 void SelectStatement::execute()
-{
-    //TO DO dupa ce termini cu storage layer
-}
+{}
 
 //Setters
 void SelectStatement::setTable(const std::string &table)

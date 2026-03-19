@@ -5,9 +5,7 @@ CreateStatement::CreateStatement(std::string table, std::vector<Columns> columns
 {}
 
 void CreateStatement::execute()
-{
-    // TO DO after we finish
-}
+{}
 
 void CreateStatement::setTable(std::string table)
 {

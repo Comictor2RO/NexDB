@@ -4,9 +4,8 @@ DropStatement::DropStatement(std::string table)
     : table(table)
 {}
 
-void DropStatement::execute() {
-    //TO DO
-}
+void DropStatement::execute()
+{}
 
 void DropStatement::setTable(const std::string &table)
 {

@@ -10,9 +10,7 @@ InsertStatement::InsertStatement(std::string table, std::vector<std::string> col
 
 //Execute
 void InsertStatement::execute()
-{
-    //TO DO dupa ce termini cu storage layer
-}
+{}
 
 //Setters
 void InsertStatement::setTable(const std::string &table)

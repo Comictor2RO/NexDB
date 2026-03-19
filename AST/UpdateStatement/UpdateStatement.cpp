@@ -6,9 +6,7 @@ UpdateStatement::UpdateStatement(std::string &table)
 
 //Methods
 void UpdateStatement::execute()
-{
-    //TO DO later
-}
+{}
 
 void UpdateStatement::addAssignements(const std::string &column, const std::string &value)
 {

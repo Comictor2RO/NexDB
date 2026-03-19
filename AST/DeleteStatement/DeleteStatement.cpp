@@ -11,9 +11,7 @@ DeleteStatement::DeleteStatement(std::string table, Condition *condition)
 
 //Execute
 void DeleteStatement::execute()
-{
-    //TO DO dupa ce termini cu storage layer
-}
+{}
 
 //Setters
 void DeleteStatement::setTable(const std::string &table)
