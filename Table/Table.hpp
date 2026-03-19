@@ -12,11 +12,11 @@ class Table {
     public:
         Table(const std::string &name, const std::vector<Columns> &scheme);
 
-        void insertRow(const Row &row);
+        bool insertRow(const Row &row);
         std::vector<Row> selectRow(Condition *cond);
         void deleteRow(Condition *cond);
         void dropStorage();
-        void updateRow(Condition *cond, std::vector<std::pair<std::string,std::string>> &assignemets);
+        void updateRow(Condition *cond, const std::vector<std::pair<std::string,std::string>> &assignemets);
 
     private:
         std::string name;
@@ -24,6 +24,10 @@ class Table {
         PageManager pageManager;
         BPlusTree index;
         int nextKey = 0;
+
+        int getColumnIndex(const std::string &columnName) const;
+        bool validateValueForType(const std::string &value, const std::string &type) const;
+        bool validateRowAgainstSchema(const Row &row) const;
 
         void rebuildIndex();
 };

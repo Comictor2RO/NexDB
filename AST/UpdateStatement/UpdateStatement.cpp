@@ -20,7 +20,8 @@ std::string UpdateStatement::getTable() const
 {
     return table;
 }
-std::vector<std::pair<std::string, std::string>> UpdateStatement::getAssignments() const
+
+const std::vector<std::pair<std::string, std::string>> &UpdateStatement::getAssignments() const
 {
     return assignments;
 }

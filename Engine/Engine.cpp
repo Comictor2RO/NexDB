@@ -22,6 +22,8 @@ void Engine::execute(Statement *statement)
         executeCreate(*stmt);
     else if (DropStatement *stmt = dynamic_cast<DropStatement *>(statement))
         executeDrop(*stmt);
+    else if (UpdateStatement *stmt = dynamic_cast<UpdateStatement *>(statement))
+        executeUpdate(*stmt);
 }
 
 void Engine::executeCreate(const CreateStatement &stmt)
@@ -59,7 +61,10 @@ void Engine::executeInsert(const InsertStatement &stmt)
     }
 
     wal.logInsert(stmt.getTable(), rowData);
-    table.insertRow(row);
+
+    if (!table.insertRow(row))
+        throw std::runtime_error("Insert failed for table " + stmt.getTable() + ".");
+
     wal.commit();
 }
 
@@ -109,6 +114,13 @@ void Engine::executeDelete(const DeleteStatement &stmt)
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme);
     table.deleteRow(stmt.getCondition());
+}
+
+void Engine::executeUpdate(const UpdateStatement &stmt)
+{
+    std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
+    Table table(stmt.getTable(), scheme);
+    table.updateRow(stmt.getCondition(), stmt.getAssignments());
 }
 
 std::vector<Row> Engine::query(const std::string &sql)

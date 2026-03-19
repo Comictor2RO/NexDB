@@ -27,6 +27,7 @@ class Engine {
         void executeDelete(const DeleteStatement &statement);
         void executeSelect(const SelectStatement &statement);
         void executeDrop(const DropStatement &statement);
+        void executeUpdate(const UpdateStatement &statement);
 };
 
 

@@ -17,7 +17,7 @@ class UpdateStatement : public Statement{
 
         //Getters
         std::string getTable() const;
-        std::vector<std::pair<std::string, std::string>> getAssignments() const;
+        const std::vector<std::pair<std::string, std::string>> &getAssignments() const;
         Condition *getCondition() const;
 
         //Setters

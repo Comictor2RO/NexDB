@@ -1,5 +1,56 @@
 #include "Table.hpp"
 
+#include <algorithm>
+#include <bits/locale_facets_nonio.h>
+
+int Table::getColumnIndex(const std::string &columnName) const
+{
+    for (int i = 0; i < (int)scheme.size(); i++)
+    {
+        if (scheme[i].name == columnName)
+            return i;
+    }
+    return -1;
+}
+bool Table::validateValueForType(const std::string &value, const std::string &type) const {
+    if (type == "INT")
+    {
+        if (value.empty())
+            return false;
+
+        int start = 0;
+        if (value[0] == '-' || value[0] == '+')
+            start = 1;
+
+        if (start == static_cast<int>(value.size()))
+            return false;
+
+        for (int i = start; i < static_cast<int>(value.size()); i++)
+        {
+            if (!std::isdigit(static_cast<unsigned char>(value[i])))
+                return false;
+        }
+        return true;
+    }
+
+    if (type == "STRING" || type == "TEXT")
+        return true;
+    return false;
+}
+bool Table::validateRowAgainstSchema(const Row &row) const
+{
+    if (row.values.size() != scheme.size())
+        return false;
+
+    for (int i = 0; i < static_cast<int>(row.values.size()); i++)
+    {
+        if (!validateValueForType(row.values[i], scheme[i].type))
+            return false;
+    }
+
+    return true;
+}
+
 static bool evaluateCondition(const Condition *cond, const Row &row, const std::vector<Columns> &scheme)
 {
     //Finds the column index in scheme
@@ -32,8 +83,11 @@ Table::Table(const std::string &name, const std::vector<Columns> &schema)
     rebuildIndex();
 }
 
-void Table::insertRow(const Row &row)
+bool Table::insertRow(const Row &row)
 {
+    if (!validateRowAgainstSchema(row))
+        return false;
+
     std::string serialized;
     for (int i = 0; i < (int)row.values.size(); i++)
     {
@@ -41,7 +95,9 @@ void Table::insertRow(const Row &row)
         if (i + 1 < (int)row.values.size())
             serialized += "|";
     }
-    pageManager.insertRow(serialized);
+
+    if (!pageManager.insertRow(serialized))
+        return false;
 
     // Indexam primul camp de tip INT ca si cheie
     if (!row.values.empty() && !scheme.empty() && scheme[0].type == "INT")
@@ -53,7 +109,9 @@ void Table::insertRow(const Row &row)
         }
         catch (...) {}
     }
+
     nextKey++;
+    return true;
 }
 
 std::vector<Row> Table::selectRow(Condition *cond)
@@ -106,14 +164,17 @@ void Table::deleteRow(Condition *cond)
     for (const auto &row : allRows)
     {
         if (cond == nullptr)
-            ;
-        if (cond != nullptr && evaluateCondition(cond, row, scheme))
+        {
+            // delete all rows -> keep none
+            continue;
+        }
+
+        if (!evaluateCondition(cond, row, scheme))
             toKeep.push_back(row);
     }
 
     pageManager.clearAll();
 
-    // Resetam indexul si contorul inainte de rescriere
     index.clear();
     nextKey = 0;
 
@@ -128,64 +189,59 @@ void Table::dropStorage()
     nextKey = 0;
 }
 
-void Table::updateRow(Condition *cond, std::vector<std::pair<std::string, std::string>> &assignmets)
+void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, std::string>> &assignmets)
 {
-    auto getColumnIndex = [this](const std::string &column) -> int
+    auto validateAssignments = [this](const std::vector<std::pair<std::string, std::string>> &assignments) -> bool
     {
-        for (int i = 0; i < static_cast<int>(scheme.size()); ++i)
+        for (const auto &assignment : assignments)
         {
-            if (scheme[i].name == column)
-                return i;
+            int colIndex = getColumnIndex(assignment.first);
+            if (colIndex == -1)
+                return false;
+
+            if (!validateValueForType(assignment.second, scheme[colIndex].type))
+                return false;
         }
-        return -1;
+        return true;
     };
 
+    if (!validateAssignments(assignmets))
+        return;
+
+    std::vector<Row> allRows = selectRow(nullptr);
     bool updatedAny = false;
 
-    for (int pageId = 0; pageId < pageManager.getNumberOfPages(); ++pageId)
+    for (auto &row : allRows)
     {
-        Page page = pageManager.readPage(pageId);
-        std::vector<std::string> rows = page.getRows();
-        bool pageChanged = false;
+        if (cond != nullptr && !evaluateCondition(cond, row, scheme))
+            continue;
 
-        for (std::string &rawRow : rows)
+        for (const auto &assignment : assignmets)
         {
-            Row row;
-            row.values = split(rawRow, '|');
+            int colIndex = getColumnIndex(assignment.first);
+            if (colIndex == -1)
+                return;
 
-            if (cond != nullptr && !evaluateCondition(cond, row, scheme))
-                continue;
+            if (colIndex >= static_cast<int>(row.values.size()))
+                return;
 
-            for (const auto &assignment : assignmets)
-            {
-                int colIndex = getColumnIndex(assignment.first);
-                if (colIndex == -1)
-                    return;
-
-                if (colIndex >= static_cast<int>(row.values.size()))
-                    return;
-
-                row.values[colIndex] = assignment.second;
-            }
-
-            rawRow.clear();
-            for (int i = 0; i < static_cast<int>(row.values.size()); ++i)
-            {
-                rawRow += row.values[i];
-                if (i + 1 < static_cast<int>(row.values.size()))
-                    rawRow += "|";
-            }
-
-            pageChanged = true;
-            updatedAny = true;
+            row.values[colIndex] = assignment.second;
         }
 
-        if (pageChanged)
-            pageManager.writePage(pageId, page);
+        updatedAny = true;
     }
 
-    if (updatedAny)
-        rebuildIndex();
+    if (!updatedAny)
+        return;
+
+    pageManager.clearAll();
+    index.clear();
+    nextKey = 0;
+
+    for (const auto &row : allRows)
+        insertRow(row);
+
+    rebuildIndex();
 }
 
 void Table::rebuildIndex()

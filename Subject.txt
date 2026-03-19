@@ -23,13 +23,14 @@ PROGRES
         - Condition
         - Columns
         - DropStatement
+        - UpdateStatement
     • Lexer
         - TokenType, Token (fisiere separate)
         - Tokenizare completa: keywords, identifiers,
           numbers, strings, operators, punctuation, wildcard
     • Parser
         - parseSelect, parseInsert, parseDelete, parseCreate
-        - parseCondition, parseDrop
+        - parseCondition, parseDrop, parseUpdate
         - validare query invalid
     • Storage
         - PageHeader
@@ -43,7 +44,7 @@ PROGRES
           (nu se mai recreează emp.db la SELECT * FROM emp)
     • Table
         - leaga Catalog + PageManager
-        - API simplu pentru operatii pe tabele (insert/select/delete/drop)
+        - API simplu pentru operatii pe tabele (insert/select/delete/drop/update)
     • Engine
         - executa Statements peste Table/PageManager
         - leaga parser-ul de storage (end-to-end DB functional)
@@ -79,22 +80,30 @@ PROGRES
 ============================================================
 NEXT TO DO
 ============================================================
-Completare limbaj SQL
-UPDATE – UPDATE tabel SET col = val WHERE cond (AST, parser, Table::updateRow, integrare în Engine).
-CREATE INDEX (opțional) – index pe o coloană aleasă, nu doar pe prima INT.
+Memory Management
+Înlocuiește raw new/delete cu std::unique_ptr<BPlusNode> în B+Tree/Table pentru auto-cleanup și evitare leaks/UAF.
+Adaugă RAII wrappers pentru fișiere (ex: std::unique_ptr<FILE, fclose_deleter>) în PageManager/WAL.
 
-Robustețe și validare
-Validare tipuri – la INSERT/UPDATE verificare că valorile respectă schema (INT numeric, VARCHAR ok); mesaje de eroare clare.
-Cheie primară / UNIQUE – în schema (Columns) flag primaryKey sau unique; respingere INSERT cu duplicate.
+Error Handling & Validation
+Wrap toate std::stoi în try-catch; returnează std::optional<int> sau custom Result<T,Err> în loc de throw.
+Parser: Gestionează erori graceful (ex: "Unexpected token at pos X") cu std::expected (C++23) sau variant; validează schema strict (no empty cols).
 
+Concurrency & Thread-Safety
+Adaugă std::mutex în Table/PageManager pentru multi-thread (ex: GUI + queries); folosește lock guards.
+WAL: Atomic writes cu fsync pentru durability reală.
+
+Testing & Robustness
+Scrii unit tests (GoogleTest) pentru B+Tree (insert 1M keys, splits), Parser (malformed SQL), full CRUD cycles.
+Valgrind/ASan pentru detect leaks/OOB; fuzzing pe Lexer cu random input.
+
+Alte Îmbunătățiri
+Configurabil: PAGESIZE, B+ order via flags; LRU cache mai agresiv.
+Logging: spdlog pentru trace/debug; metrics (query time, hit rate).
+​
 GUI
 Font custom – LoadFontEx / DrawTextEx peste tot (îl menționaseși).
 Istoric query – săgeți sus/jos în input pentru comenzi anterioare.
 Highlight SQL – culori diferite pentru keywords, stringuri, numere în zona de input.
-
-Date și operare
-Tranzacții – BEGIN / COMMIT / ROLLBACK; WAL deja există, tranzacțiile țin mai multe operații în log până la commit.
-Paginație la rezultate – pentru SELECT cu multe rânduri (prev/next page în panoul de rezultate).
 
 Dezvoltare și CV
 Teste automate – un singur executable de teste (fără GUI) care rulează CREATE/INSERT/SELECT/DELETE (și UPDATE/DROP dacă le adaugi) și verifică rezultatele; util și pentru regresii.
