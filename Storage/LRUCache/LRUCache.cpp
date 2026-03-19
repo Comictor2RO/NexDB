@@ -52,9 +52,14 @@ void LRUCache::evict()
     int pageId = last.first;
     if (last.second.isDirty)
     {
+        if (!file.is_open())
+            return;
         file.clear();
         file.seekp(pageId * PAGE_SIZE);
         file.write(last.second.page.getBuffer(), PAGE_SIZE);
+        if (file.fail()) {
+            file.clear();
+        }
         file.flush();
     }
 

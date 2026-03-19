@@ -28,6 +28,7 @@ class Engine {
         void executeSelect(const SelectStatement &statement);
         void executeDrop(const DropStatement &statement);
         void executeUpdate(const UpdateStatement &statement);
+        void dropTableStorage(const std::string &tableName);
 };
 
 

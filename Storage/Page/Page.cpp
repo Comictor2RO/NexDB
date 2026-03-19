@@ -7,39 +7,39 @@ Page::Page()
 
 Page::Page(int pageId)
 {
+    memset(data, 0, PAGE_SIZE);
     PageHeader *header = (PageHeader *)data;
     header->pageId = pageId;
     header->freeSpace = PAGE_SIZE - sizeof(PageHeader);
     header->rowNumber = 0;
-    memset(data + sizeof(PageHeader), 0, PAGE_SIZE - (sizeof(PageHeader)));
-
+    header->nextRowOffset = sizeof(PageHeader);
 }
 
 std::vector<std::string> Page::getRows() const
 {
-    PageHeader *header = (PageHeader *)data;
-    std::vector<std::string> row;
-    std::string current;
-    int data_start = sizeof(PageHeader) ; //Jumps over the header
-    int bytes_used = PAGE_SIZE - header->freeSpace - sizeof(PageHeader); //How many bytes where used
+    const PageHeader *header = (const PageHeader *)data;
+    std::vector<std::string> rows;
+    int currentOffset = sizeof(PageHeader);
 
-    for (int i = data_start; i < data_start + bytes_used; i++) //Goes until the bytes written in the file
+    for (int i = 0; i < header->rowNumber; i++)
     {
-        if (data[i] == '\0') //Exits
-            break;
-        if (data[i] == '\n') //When it arrives on \n saves the data in row and clears the data
+        if (currentOffset >= PAGE_SIZE) break;
+        
+        std::string row;
+        while (currentOffset < PAGE_SIZE && data[currentOffset] != '\n')
         {
-            if (!current.empty())
-            {
-                row.push_back(current);
-                current.clear();
-            }
+            row += data[currentOffset];
+            currentOffset++;
         }
-        else
-            current += data[i]; //Builds the row
+        
+        if (currentOffset < PAGE_SIZE && data[currentOffset] == '\n')
+        {
+            rows.push_back(row);
+            currentOffset++;
+        }
     }
 
-    return row;
+    return rows;
 }
 
 int Page::getPageId() const
@@ -83,12 +83,12 @@ bool Page::addRow(const std::string &row)
     if (!hasSpace(row.length() + 1)) //If there is no space returns false
         return false;
 
-    int bytesUsed = PAGE_SIZE - header->freeSpace - sizeof(PageHeader);
-    int offset = sizeof(PageHeader) + bytesUsed;
+    int offset = header->nextRowOffset;
 
     memcpy(data + offset, row.c_str(), row.length()); //Saves the row
     data[offset + row.length()] = '\n'; //Adds the newline at the end
 
+    header->nextRowOffset += row.length() + 1;
     header->freeSpace -= row.length() + 1; //Updates the free space available
     header->rowNumber++; //Updates the number of rows
 

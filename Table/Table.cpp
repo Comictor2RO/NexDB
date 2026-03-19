@@ -66,6 +66,9 @@ static bool evaluateCondition(const Condition *cond, const Row &row, const std::
     if (colIndex == -1)
         return false;
 
+    if (row.values.empty() || colIndex >= (int)row.values.size())
+        return false;
+
     const std::string &rowValue = row.values[colIndex];
 
     if (cond->op == "=")  return rowValue == cond->value;
@@ -96,7 +99,8 @@ bool Table::insertRow(const Row &row)
             serialized += "|";
     }
 
-    if (!pageManager.insertRow(serialized))
+    PageManager::InsertionResult res = pageManager.insertRowWithLocation(serialized);
+    if (!res.success)
         return false;
 
     // Indexam primul camp de tip INT ca si cheie
@@ -105,7 +109,7 @@ bool Table::insertRow(const Row &row)
         try
         {
             int key = std::stoi(row.values[0]);
-            index.insert(key, 0, nextKey);
+            index.insert(key, res.pageId, res.rowIndex);
         }
         catch (...) {}
     }
@@ -127,12 +131,13 @@ std::vector<Row> Table::selectRow(Condition *cond)
             IndexRecord *record = index.search(key);
             if (record != nullptr)
             {
-                std::vector<std::string> allRows = pageManager.getAllRows();
-                int globalIndex = record->offset;
-                if (globalIndex >= 0 && globalIndex < (int)allRows.size())
+                Page page = pageManager.readPage(record->pageId);
+                std::vector<std::string> pageRows = page.getRows();
+                int localIndex = record->offset;
+                if (localIndex >= 0 && localIndex < (int)pageRows.size())
                 {
                     Row row;
-                    row.values = split(allRows[globalIndex], '|');
+                    row.values = split(pageRows[localIndex], '|');
                     return { row };
                 }
             }
@@ -180,13 +185,6 @@ void Table::deleteRow(Condition *cond)
 
     for (const auto &row : toKeep)
         insertRow(row);
-}
-
-void Table::dropStorage()
-{
-    pageManager.clearAll();
-    index.clear();
-    nextKey = 0;
 }
 
 void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, std::string>> &assignmets)
@@ -240,8 +238,13 @@ void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, 
 
     for (const auto &row : allRows)
         insertRow(row);
+}
 
-    rebuildIndex();
+void Table::dropStorage()
+{
+    pageManager.clearAll();
+    index.clear();
+    nextKey = 0;
 }
 
 void Table::rebuildIndex()

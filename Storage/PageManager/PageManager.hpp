@@ -15,7 +15,14 @@ class PageManager {
         PageManager(std::string filename);
 
         //Method
-        bool insertRow(const std::string &row);
+    struct InsertionResult {
+        bool success;
+        int pageId;
+        int rowIndex;
+    };
+
+    InsertionResult insertRowWithLocation(const std::string &row);
+    bool insertRow(const std::string &row);
         void clearAll();
         Page readPage(int pageId);
         void writePage(int pageId, const Page &page);

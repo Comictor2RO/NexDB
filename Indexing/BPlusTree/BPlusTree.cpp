@@ -14,7 +14,7 @@ void BPlusTree::splitLeaf(BPlusNode *leaf, BPlusNode *parent, int index)
     int middle = (order + 1) / 2;
     auto right = std::make_unique<BPlusNode>();
     right->isLeaf = true;
-    right->next = leaf->next;
+    right->parent = parent;
 
     // Move data to right
     right->keys.assign(leaf->keys.begin() + middle, leaf->keys.end());
@@ -22,8 +22,6 @@ void BPlusTree::splitLeaf(BPlusNode *leaf, BPlusNode *parent, int index)
 
     leaf->keys.erase(leaf->keys.begin() + middle, leaf->keys.end());
     leaf->records.erase(leaf->records.begin() + middle, leaf->records.end());
-
-    leaf->next = right.get();
 
     int promotedKey = right->keys[0];
 
@@ -33,25 +31,24 @@ void BPlusTree::splitLeaf(BPlusNode *leaf, BPlusNode *parent, int index)
         newRoot->isLeaf = false;
         newRoot->keys.push_back(promotedKey);
 
-        // FIXED: Move the existing root, don't create new unique_ptr from raw pointer
+        BPlusNode* oldRootPtr = root.get();
         newRoot->children.push_back(std::move(root));
         newRoot->children.push_back(std::move(right));
 
         // Update parents
-        newRoot->children[0]->parent = newRoot.get();
-        newRoot->children[1]->parent = newRoot.get();
+        if (oldRootPtr) oldRootPtr->parent = newRoot.get();
+        if (newRoot->children.size() > 1) newRoot->children[1]->parent = newRoot.get();
 
         root = std::move(newRoot);
     } else {
-        // Insert into existing parent - set parent BEFORE move
+        // Insert into existing parent
         right->parent = parent;
 
-        parent->keys.insert(parent->keys.begin() + index + 1, promotedKey);
+        parent->keys.insert(parent->keys.begin() + index, promotedKey);
         parent->children.insert(parent->children.begin() + index + 1, std::move(right));
 
         // Check if parent needs split
         if ((int)parent->keys.size() > order) {
-            // Need to find parent's index in grandparent
             BPlusNode* grandparent = parent->parent;
             int parentIndex = 0;
             if (grandparent) {
@@ -96,23 +93,23 @@ void BPlusTree::splitInternal(BPlusNode* node, BPlusNode* parent, int index)
         newRoot->isLeaf = false;
         newRoot->keys.push_back(promotedKey);
 
+        BPlusNode* oldRootPtr = root.get();
         newRoot->children.push_back(std::move(root));
         newRoot->children.push_back(std::move(right));
 
         // Update parents
-        newRoot->children[0]->parent = newRoot.get();
-        newRoot->children[1]->parent = newRoot.get();
+        if (oldRootPtr) oldRootPtr->parent = newRoot.get();
+        if (newRoot->children.size() > 1) newRoot->children[1]->parent = newRoot.get();
 
         root = std::move(newRoot);
     } else {
-        // Insert into parent - set parent BEFORE move
+        // Insert into parent
         right->parent = parent;
 
-        parent->keys.insert(parent->keys.begin() + index + 1, promotedKey);
+        parent->keys.insert(parent->keys.begin() + index, promotedKey);
         parent->children.insert(parent->children.begin() + index + 1, std::move(right));
 
         if ((int)parent->keys.size() > order) {
-            // Find parent's index in grandparent
             BPlusNode* grandparent = parent->parent;
             int parentIndex = 0;
             if (grandparent) {
@@ -164,7 +161,6 @@ void BPlusTree::insert(int key, int pageId, int offset)
     {
         root = std::make_unique<BPlusNode>();
         root->isLeaf = true;
-        root->next = nullptr;
     }
     BPlusNode* leaf = findLeaf(key);
 
@@ -175,6 +171,16 @@ void BPlusTree::insert(int key, int pageId, int offset)
     leaf->keys.insert(leaf->keys.begin() + i, key);
     leaf->records.insert(leaf->records.begin() + i, {key, pageId, offset});
 
-    if ((int)leaf->keys.size() > order)
-        splitLeaf(leaf, leaf->parent, i);
+    if ((int)leaf->keys.size() > order) {
+        int leafIndex = 0;
+        if (leaf->parent) {
+            for (int j = 0; j < (int)leaf->parent->children.size(); j++) {
+                if (leaf->parent->children[j].get() == leaf) {
+                    leafIndex = j;
+                    break;
+                }
+            }
+        }
+        splitLeaf(leaf, leaf->parent, leafIndex);
+    }
 }

@@ -36,13 +36,15 @@ void Engine::executeDrop(const DropStatement &stmt)
     if (!catalog.tableExists(stmt.getTable()))
         throw std::runtime_error("Table " + stmt.getTable() + " does not exist.");
 
-    {
-        std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-        Table table(stmt.getTable(), scheme);
-        table.dropStorage();
-    }
-
+    dropTableStorage(stmt.getTable());
     catalog.dropTable(stmt.getTable());
+}
+
+void Engine::dropTableStorage(const std::string &tableName)
+{
+    std::vector<Columns> scheme = catalog.getColumns(tableName);
+    Table table(tableName, scheme);
+    table.dropStorage();
 }
 
 void Engine::executeInsert(const InsertStatement &stmt)
