@@ -140,8 +140,16 @@ std::vector<Row> Table::selectRow(Condition *cond)
                     row.values = split(pageRows[localIndex], '|');
                     return { row };
                 }
+                else
+                {
+                    throw std::runtime_error("Index record corrupted: row " + std::to_string(localIndex) + " not found in page " + std::to_string(record->pageId));
+                }
             }
             return {};
+        }
+        catch (const std::exception &e)
+        {
+            throw; // Repropaga erorile de index sau corupere
         }
         catch (...) {}
     }
@@ -249,24 +257,29 @@ void Table::dropStorage()
 
 void Table::rebuildIndex()
 {
-    std::vector<std::string> rawRows = pageManager.getAllRows();
-    nextKey = (int)rawRows.size();
+    index.clear();
+    int totalPages = pageManager.getNumberOfPages();
+    int globalRowCounter = 0;
 
-    if (scheme.empty() || scheme[0].type != "INT")
-        return;
-
-    for (int i = 0; i < (int)rawRows.size(); i++)
+    for (int p = 0; p < totalPages; p++)
     {
-        Row row;
-        row.values = split(rawRows[i], '|');
-        if (!row.values.empty())
+        Page page = pageManager.readPage(p);
+        std::vector<std::string> rows = page.getRows();
+        for (int r = 0; r < (int)rows.size(); r++)
         {
-            try
+            Row row;
+            row.values = split(rows[r], '|');
+            if (!row.values.empty() && !scheme.empty() && scheme[0].type == "INT")
             {
-                int key = std::stoi(row.values[0]);
-                index.insert(key, 0, i);
+                try
+                {
+                    int key = std::stoi(row.values[0]);
+                    index.insert(key, p, r);
+                }
+                catch (...) {}
             }
-            catch (...) {}
+            globalRowCounter++;
         }
     }
+    nextKey = globalRowCounter;
 }

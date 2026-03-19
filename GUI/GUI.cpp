@@ -65,6 +65,17 @@ void GUI::handleInput()
     if (!IsKeyDown(KEY_BACKSPACE))
         backspaceRepeatTimer = 0;
 
+    // Scroll results
+    float wheel = GetMouseWheelMove();
+    if (wheel != 0)
+    {
+        resultsScrollIndex -= (int)wheel * 3; // Scroll 3 rows at a time
+        if (resultsScrollIndex < 0) resultsScrollIndex = 0;
+        int maxScroll = (int)results.size() - 5; // Keep some rows visible
+        if (maxScroll < 0) maxScroll = 0;
+        if (resultsScrollIndex > maxScroll) resultsScrollIndex = maxScroll;
+    }
+
     if (IsKeyPressed(KEY_ENTER) && !input.empty())
         executeQuery();
 }
@@ -97,6 +108,7 @@ void GUI::executeQuery()
     }
     input.clear();
     cursorPos = 0;
+    resultsScrollIndex = 0;
 }
 
 void GUI::drawInputPanel()
@@ -157,18 +169,35 @@ void GUI::drawResultsPanel()
     int rowHeight = 26;
     int maxRows   = (440 - 35) / rowHeight;
 
-    for (int i = 0; i < (int)results.size() && i < maxRows; i++)
+    // Asigură-te că scroll index-ul este valid
+    if (resultsScrollIndex > (int)results.size() - 1) 
+        resultsScrollIndex = std::max(0, (int)results.size() - 1);
+
+    for (int i = 0; i < maxRows && (resultsScrollIndex + i) < (int)results.size(); i++)
     {
+        int rowIndex = resultsScrollIndex + i;
         int y = startY + i * rowHeight;
-        DrawRectangle(0, y, 1280, rowHeight, i % 2 == 0 ? even : odd);
+        DrawRectangle(0, y, 1280, rowHeight, rowIndex % 2 == 0 ? even : odd);
         DrawRectangleLinesEx(Rectangle{0, (float)y, 1280, (float)rowHeight}, 1, cell);
         std::string rowStr;
-        for (int j = 0; j < (int)results[i].values.size(); j++)
+        for (int j = 0; j < (int)results[rowIndex].values.size(); j++)
         {
             if (j > 0) rowStr += "   |   ";
-            rowStr += results[i].values[j];
+            rowStr += results[rowIndex].values[j];
         }
         DrawTextEx(regular, rowStr.c_str(), Vector2{10, (float)y + 4}, 18, 2, text);
+    }
+
+    // Scrollbar simplu
+    if ((int)results.size() > maxRows)
+    {
+        float scrollAreaHeight = 440 - 35;
+        float barHeight = std::max(20.0f, scrollAreaHeight * ((float)maxRows / results.size()));
+        float scrollProgress = (float)resultsScrollIndex / (results.size() - maxRows);
+        float barY = startY + scrollProgress * (scrollAreaHeight - barHeight);
+        
+        DrawRectangle(1270, startY, 10, scrollAreaHeight, ColorAlpha(GRAY, 0.3f));
+        DrawRectangle(1270, (int)barY, 10, (int)barHeight, isDark ? LIGHTGRAY : DARKGRAY);
     }
 }
 
