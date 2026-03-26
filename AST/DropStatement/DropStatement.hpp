@@ -1,7 +1,7 @@
 #ifndef DROP_STATEMENT_HPP
 #define DROP_STATEMENT_HPP
 
-#include "Statement.hpp"
+#include "../Statement/Statement.hpp"
 #include <string>
 
 class DropStatement : public Statement{

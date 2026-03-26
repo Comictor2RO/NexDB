@@ -114,4 +114,38 @@ PROGRES GENERAL:
 ✅ Concurrency - Thread-safe PageManager cu lock granular
 ✅ Error Handling - std::expected cu enum granular în Parser și Table layer
 ✅ Memory Safety - Smart pointers implementate în BPlusTree (unique_ptr pentru ownership, optional pentru returnări)
-⚪ Testing - Lipsesc teste automate (recomandat GTest)
+
+Componente critice (Prioritate Înaltă):
+    Table (Table.hpp)
+        Insert, Select, Delete, Update operations
+        Schema validation
+        Row validation
+        Condition evaluation
+
+    Catalog (Catalog.hpp)
+        Create/Drop table
+        Table existence check
+        Schema retrieval
+        Persistence (load/save)
+
+    BPlusTree (BPlusTree.hpp)
+I       nsert/Search operations
+        Node splitting
+        Tree balancing
+        Edge cases (empty tree, single node, etc.)
+
+Componente importante (Prioritate Medie):
+    LRUCache (LRUCache.hpp)
+        Get/Put operations
+        Cache eviction
+        Dirty page handling
+        Cache capacity limits
+
+    WALManager (WALManager.hpp)
+        Log insert operations
+        Commit/Recover functionality
+        Log persistence
+
+    Engine (Engine.hpp)
+        End-to-end execution tests
+        Integration între Catalog, Table, Parser

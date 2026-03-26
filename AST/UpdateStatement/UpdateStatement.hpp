@@ -3,8 +3,8 @@
 
 #include <string>
 #include <vector>
-#include "Condition.hpp"
-#include "Statement.hpp"
+#include "../Condition/Condition.hpp"
+#include "../Statement/Statement.hpp"
 
 
 class UpdateStatement : public Statement{

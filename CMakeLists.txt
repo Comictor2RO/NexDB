@@ -1,22 +1,55 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(VDT_Engine)
 
 set(CMAKE_CXX_STANDARD 23)
-# Executabilul in bin/ - uneori Windows nu blocheaza cai noi
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# RayLib instalat local
+# GTest pentru teste (auto-compile MinGW)
+include(FetchContent)
+FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+enable_testing()
+
+# Teste SEPARATE
+add_subdirectory(tests)
+
+# Raylib
 set(RAYLIB_DIR "C:/raylib/raylib/src")
 include_directories(${RAYLIB_DIR})
 link_directories(${RAYLIB_DIR})
 
-include_directories(AST/Condition)
-include_directories(AST/DeleteStatement)
-include_directories(AST/InsertStatement)
-include_directories(frontend/Lexer)
-include_directories(AST/SelectStatement)
-include_directories(AST/Statement)
+# Include directories
+include_directories(VDT_Engine PRIVATE
+        AST/Condition
+        AST/DeleteStatement
+        AST/InsertStatement
+        frontend/Lexer
+        AST/SelectStatement
+        AST/Statement
+        AST/CreateStatement
+        AST/Columns
+        Catalog
+        Table
+        AST/Row
+        StringUtils
+        Engine
+        Indexing/IndexRecord
+        Indexing/BPlusNode
+        Indexing/BPlusTree
+        Storage/LRUCache
+        WALManager
+        GUI
+        AST/DropStatement
+        AST/UpdateStatement
+)
 
+# MAIN APP - FĂRĂ teste!
 add_executable(VDT_Engine
         AST/Condition/Condition.hpp
         AST/DeleteStatement/DeleteStatement.cpp
@@ -63,11 +96,9 @@ add_executable(VDT_Engine
         AST/DropStatement/DropStatement.hpp
         AST/UpdateStatement/UpdateStatement.cpp
         AST/UpdateStatement/UpdateStatement.hpp
-        main.cpp
-        AST/DropStatement/DropStatement.cpp
         GUI/Colors.hpp
 )
 
-# Legare statică a runtime C++/GCC - .exe nu mai are nevoie de libstdc++-6.dll / libgcc_s
-target_link_options(VDT_Engine PRIVATE -static-libgcc -static-libstdc++)
+# Link main app
 target_link_libraries(VDT_Engine PRIVATE raylib opengl32 gdi32 winmm)
+target_link_options(VDT_Engine PRIVATE -static-libgcc -static-libstdc++)

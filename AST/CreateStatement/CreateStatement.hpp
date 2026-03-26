@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "Statement.hpp"
+#include "../Statement/Statement.hpp"
 
 class CreateStatement : public Statement {
     public:
