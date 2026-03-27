@@ -129,7 +129,7 @@ Componente critice (Prioritate Înaltă):
         Persistence (load/save)
 
     BPlusTree (BPlusTree.hpp)
-I       nsert/Search operations
+I       Insert/Search operations
         Node splitting
         Tree balancing
         Edge cases (empty tree, single node, etc.)

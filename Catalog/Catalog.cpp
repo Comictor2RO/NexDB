@@ -20,6 +20,10 @@ void Catalog::createTable(const std::string &name, const std::vector<Columns> &c
 {
     if (tableExists(name))
         return;
+
+    if (columns.empty())
+        return;
+
     this->columns[name] = columns;
     save();
 }
