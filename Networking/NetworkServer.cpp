@@ -1,8 +1,23 @@
 #include "NetworkServer.hpp"
+#include <iostream>
 
 NetworkServer::NetworkServer(size_t port, Engine &engine)
     : port(port), engine(engine), acceptor(io_context)
 {};
+
+void NetworkServer::start()
+{
+    openServer();
+    acceptConnections();
+    io_context.run();
+}
+
+void NetworkServer::stop()
+{
+    acceptor.close();
+    io_context.stop();
+    std::cout << "Server stopped." << std::endl;
+}
 
 // Opens the server on the specified port
 void NetworkServer::openServer()
@@ -37,12 +52,15 @@ void NetworkServer::handleClient(tcp::socket socket)
 
     asio::async_read_until(*sharedSocket, *buffer, "\n", [this, sharedSocket, buffer](asio::error_code ec, std::size_t bytes_transferred) {
         if (!ec && bytes_transferred > 0) {
-
             std::istream is(buffer.get());
             std::string message;
             std::getline(is, message);
 
-            executeQuery(message);
+            auto response = std::make_shared<std::string>(executeQuery(message));
+            asio::async_write(*sharedSocket, asio::buffer(*response), [sharedSocket, response](asio::error_code ec, std::size_t) {
+                if (ec)
+                    std::cerr << "Error sending response: " << ec.message() << std::endl;
+            });
         }
         else {
             std::cerr << "Error reading from client: " << ec.message() << std::endl;
@@ -50,8 +68,27 @@ void NetworkServer::handleClient(tcp::socket socket)
     });
 }
 
-std::string NetworkServer::executeQuery(std::string &query) {
+std::string NetworkServer::executeQuery(std::string &query)
+{
+    try {
+        std::vector<Row> rows = engine.query(query);
 
+        if (rows.empty())
+            return "OK\n";
+
+        std::string result;
+        for (const Row &row : rows) {
+            for (size_t i = 0; i < row.values.size(); i++) {
+                if (i > 0) result += "|";
+                result += row.values[i];
+            }
+            result += "\n";
+        }
+        return result;
+    }
+    catch (const std::exception &e) {
+        return std::string("ERROR: ") + e.what() + "\n";
+    }
 }
 
 

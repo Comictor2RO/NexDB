@@ -1,6 +1,7 @@
 #ifndef NETWORK_SERVER_HPP
 #define NETWORK_SERVER_HPP
 
+#include <iostream>
 #include <asio.hpp>
 #include <asio/ts/buffer.hpp>
 #include <asio/ts/internet.hpp>
@@ -14,6 +15,8 @@ class NetworkServer {
         NetworkServer(size_t port, Engine &engine);
 
         void start();
+        void stop();
+
     private:
         size_t port;
         asio::io_context io_context;
