@@ -19,11 +19,18 @@
 #include <asio/ts/internet.hpp>
 #include <string>
 #include <mutex>
+#include <map>
+#include <chrono>
 #include <functional>
 
 class Engine;
 
 using asio::ip::tcp;
+
+struct RateLimitEntry {
+    int failCount = 0;
+    std::chrono::steady_clock::time_point bannedUntil{};
+};
 
 class NetworkServer {
     public:
@@ -33,6 +40,7 @@ class NetworkServer {
         void run();
         void stop();
         size_t getPort() const;
+        std::string getAuthToken() const;
         void setLogCallback(std::function<void(const std::string&)> callback);
 
     private:
@@ -43,10 +51,18 @@ class NetworkServer {
         std::mutex engineMutex;
         std::function<void(const std::string&)> logCallback;
 
+        std::string authSecret;
+        std::map<std::string, RateLimitEntry> rateLimitMap;
+        std::mutex rateLimitMutex;
+
         void openServer();
         void acceptConnections();
         void handleClient(tcp::socket socket);
         std::string executeQuery(std::string &query);
+
+        void loadOrCreateSecret();
+        std::string generateNonce();
+        bool handleHandshake(tcp::socket &socket, const std::string &clientIp);
 };
 
 #endif
