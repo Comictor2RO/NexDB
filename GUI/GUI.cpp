@@ -8,12 +8,12 @@ GUI::GUI(Catalog &catalog, Engine &engine)
 
 void GUI::run()
 {
-    InitWindow(1280, 720, "VDT ENGINE");
+    InitWindow(1280, 720, "NexDB");
     SetTargetFPS(60);
-    regular = LoadFont("resources/asap-condensed/AsapCondensed-Regular.ttf");
-    bold = LoadFont("resources/asap-condensed/AsapCondensed-Bold.ttf");
-    italic = LoadFont("resources/asap-condensed/AsapCondensed-Italic.ttf");
-    semibold = LoadFont("resources/asap-condensed/AsapCondensed-SemiBold.ttf");
+    regular = LoadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Regular.ttf");
+    bold = LoadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Bold.ttf");
+    italic = LoadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Italic.ttf");
+    semibold = LoadFont("resources/asap-condensed/asap-condensed/AsapCondensed-SemiBold.ttf");
 
     while (!WindowShouldClose())
     {

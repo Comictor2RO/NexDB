@@ -20,15 +20,24 @@ enable_testing()
 add_subdirectory(tests)
 
 # Raylib
-set(RAYLIB_DIR "C:/raylib/raylib/src")
-include_directories(${RAYLIB_DIR})
-link_directories(${RAYLIB_DIR})
+FetchContent_Declare(
+        raylib
+        URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(raylib)
 
-# Asio
-set(ASIO_DIR "C:/Program Files/JetBrains/CLion 2025.3.3/bin/mingw/asio-1.36.0/asio-1.36.0/include")
-include_directories(${ASIO_DIR})
+# Asio (header-only, standalone)
+FetchContent_Declare(
+        asio
+        URL https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-36-0.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(asio)
 add_compile_definitions(ASIO_STANDALONE)
 # Include directories
+include_directories(${asio_SOURCE_DIR}/asio/include)
 include_directories(VDT_Engine PRIVATE
         AST/Condition
         AST/DeleteStatement
@@ -108,3 +117,10 @@ add_executable(VDT_Engine
 # Link main app
 target_link_libraries(VDT_Engine PRIVATE raylib opengl32 gdi32 winmm ws2_32 wsock32)
 target_link_options(VDT_Engine PRIVATE -static-libgcc -static-libstdc++ -Wl,--allow-multiple-definition)
+
+# Copiază resources lângă executabil
+add_custom_command(TARGET VDT_Engine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/resources
+        $<TARGET_FILE_DIR:VDT_Engine>/resources
+)
