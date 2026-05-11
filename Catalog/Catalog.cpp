@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <mutex>
 
 const char* Catalog::CATALOG_FILE = "catalog.dat";
 
