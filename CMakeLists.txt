@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(VDT_Engine)
+project(NexDB)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -38,7 +38,7 @@ add_compile_definitions(ASIO_STANDALONE)
 add_subdirectory(tests)
 # Include directories
 include_directories(${asio_SOURCE_DIR}/asio/include)
-include_directories(VDT_Engine PRIVATE
+include_directories(NexDB PRIVATE
         AST/Condition
         AST/DeleteStatement
         AST/InsertStatement
@@ -63,7 +63,7 @@ include_directories(VDT_Engine PRIVATE
 )
 
 # MAIN APP - FĂRĂ teste!
-add_executable(VDT_Engine
+add_executable(NexDB
         AST/Condition/Condition.hpp
         AST/DeleteStatement/DeleteStatement.cpp
         AST/DeleteStatement/DeleteStatement.hpp
@@ -115,12 +115,12 @@ add_executable(VDT_Engine
 )
 
 # Link main app
-target_link_libraries(VDT_Engine PRIVATE raylib opengl32 gdi32 winmm ws2_32 wsock32)
-target_link_options(VDT_Engine PRIVATE -static-libgcc -static-libstdc++ -Wl,--allow-multiple-definition)
+target_link_libraries(NexDB PRIVATE raylib opengl32 gdi32 winmm ws2_32 wsock32)
+target_link_options(NexDB PRIVATE -static-libgcc -static-libstdc++ -Wl,--allow-multiple-definition)
 
 # Copiază resources lângă executabil
-add_custom_command(TARGET VDT_Engine POST_BUILD
+add_custom_command(TARGET NexDB POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/resources
-        $<TARGET_FILE_DIR:VDT_Engine>/resources
+        $<TARGET_FILE_DIR:NexDB>/resources
 )

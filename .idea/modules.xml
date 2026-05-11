@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/Mini Database Engine.iml" filepath="$PROJECT_DIR$/.idea/Mini Database Engine.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/NexDB.iml" filepath="$PROJECT_DIR$/.idea/NexDB.iml" />
     </modules>
   </component>
 </project>
