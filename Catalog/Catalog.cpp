@@ -13,39 +13,37 @@ Catalog::Catalog()
 
 bool Catalog::tableExists(const std::string &name) const
 {
+    std::shared_lock lock(mutex);
     return columns.find(name) != columns.end();
 }
 
 void Catalog::createTable(const std::string &name, const std::vector<Columns> &columns)
 {
-    if (tableExists(name))
+    std::unique_lock lock(mutex);
+    if (this->columns.count(name) || columns.empty())
         return;
-
-    if (columns.empty())
-        return;
-
     this->columns[name] = columns;
     save();
 }
 
 void Catalog::dropTable(const std::string &name)
 {
-    if (!tableExists(name))
+    std::unique_lock lock(mutex);
+    if (!this->columns.count(name))
         return;
-
-    columns.erase(name);
-
+    this->columns.erase(name);
     std::error_code ec;
     std::filesystem::remove(name + ".db", ec);
-
     save();
 }
 
 std::vector<Columns> Catalog::getColumns(const std::string &name) const
 {
-    if (!tableExists(name))
+    std::shared_lock lock(mutex);
+    auto it = columns.find(name);
+    if (it == columns.end())
         return {};
-    return columns.at(name);
+    return it->second;
 }
 
 void Catalog::load()

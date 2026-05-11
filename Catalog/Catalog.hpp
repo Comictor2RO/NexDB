@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <shared_mutex>
 #include "../AST/Columns/Columns.hpp"
 
 class Catalog {
@@ -19,6 +20,7 @@ class Catalog {
         std::vector<Columns> getColumns(const std::string &name) const;
 
     private:
+        mutable std::shared_mutex mutex;
         std::map<std::string, std::vector<Columns>> columns;
         static const char* CATALOG_FILE;
 
