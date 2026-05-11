@@ -25,7 +25,7 @@ class Engine {
         void executeCreate(const CreateStatement &statement);
         void executeInsert(const InsertStatement &statement);
         void executeDelete(const DeleteStatement &statement);
-        void executeSelect(const SelectStatement &statement);
+        std::vector<Row> executeSelect(const SelectStatement &statement);
         void executeDrop(const DropStatement &statement);
         void executeUpdate(const UpdateStatement &statement);
         void dropTableStorage(const std::string &tableName);
