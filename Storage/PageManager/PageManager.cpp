@@ -21,14 +21,10 @@ PageManager::PageManager(std::string filename) : cache(16, file) {
 
 PageManager::InsertionResult PageManager::insertRowWithLocation(const std::string &row)
 {
-    // Snapshot numberOfPages to check if we have pages
-    int currentPages;
-    {
-        std::shared_lock<std::shared_mutex> lock(cache_mutex);
-        currentPages = numberOfPages;
-    }
+    std::unique_lock<std::mutex> insert_lock(insert_mutex);
 
-    // Try to insert in last page (no lock held during I/O)
+    int currentPages = numberOfPages;
+
     if (currentPages > 0)
     {
         Page lastPage = readPage(currentPages - 1);
@@ -41,15 +37,11 @@ PageManager::InsertionResult PageManager::insertRowWithLocation(const std::strin
         }
     }
 
-    // Need new page - acquire write lock
-    std::unique_lock<std::shared_mutex> write_lock(cache_mutex);
     Page newPage(numberOfPages);
     if (!newPage.addRow(row))
         return {false, -1, -1};
     int newPageId = numberOfPages;
     numberOfPages++;
-    write_lock.unlock();
-
     writePage(newPageId, newPage);
     return {true, newPageId, 0};
 }

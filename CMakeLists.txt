@@ -16,9 +16,6 @@ set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 enable_testing()
 
-# Teste SEPARATE
-add_subdirectory(tests)
-
 # Raylib
 FetchContent_Declare(
         raylib
@@ -36,6 +33,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(asio)
 add_compile_definitions(ASIO_STANDALONE)
+
+# Teste SEPARATE
+add_subdirectory(tests)
 # Include directories
 include_directories(${asio_SOURCE_DIR}/asio/include)
 include_directories(VDT_Engine PRIVATE

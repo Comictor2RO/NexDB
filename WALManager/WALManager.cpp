@@ -21,6 +21,33 @@ void WALManager::logInsert(const std::string &table, const std::string &rowData)
     file.flush();
 }
 
+void WALManager::logDelete(const std::string &table, const Condition *condition)
+{
+    std::string condData;
+    if (condition)
+        condData = condition->column + "~" + condition->op + "~" + condition->value;
+    file << "DELETE|" << table << "|" << condData << "|0\n";
+    file.flush();
+}
+
+void WALManager::logUpdate(const std::string &table, const Condition *condition,
+                           const std::vector<std::pair<std::string, std::string>> &assignments)
+{
+    std::string condData;
+    if (condition)
+        condData = condition->column + "~" + condition->op + "~" + condition->value;
+
+    std::string assignData;
+    for (const auto &a : assignments)
+    {
+        if (!assignData.empty()) assignData += "~";
+        assignData += a.first + "~" + a.second;
+    }
+
+    file << "UPDATE|" << table << "|" << condData << "|" << assignData << "|0\n";
+    file.flush();
+}
+
 std::vector<WALEntry> WALManager::readLog()
 {
     std::vector<WALEntry> entries;
@@ -79,26 +106,66 @@ void WALManager::recover(Engine &engine)
 
     for (const auto &e : entries)
     {
-        if (!e.committed && e.type == "INSERT")
+        if (e.committed) continue;
+
+        std::string sql;
+
+        if (e.type == "INSERT")
         {
             std::string csv = e.rowData;
             for (char &c : csv) if (c == '|') c = ',';
-            std::string sql = "INSERT INTO " + e.table + " VALUES (" + csv + ")";
-            Lexer lexer(sql);
-            std::vector<Token> tokens = lexer.tokenize();
-            Parser parser(tokens);
-            auto result = parser.parse();
-            if (!result) {
-                std::cerr << "WAL parse error: " << (int)result.error() << std::endl;
-                continue;  // Sau return/break
-            }
-            Statement *stmt = result.value();
-            if (stmt)
-            {
-                engine.execute(stmt);
-                delete stmt;
-            }
-            commit();
+            sql = "INSERT INTO " + e.table + " VALUES (" + csv + ")";
         }
+        else if (e.type == "DELETE")
+        {
+            sql = "DELETE FROM " + e.table;
+            if (!e.rowData.empty())
+            {
+                std::vector<std::string> parts = split(e.rowData, '~');
+                if (parts.size() == 3)
+                    sql += " WHERE " + parts[0] + " " + parts[1] + " " + parts[2];
+            }
+        }
+        else if (e.type == "UPDATE")
+        {
+            // rowData format: condcol~condop~condval|a1col~a1val~a2col~a2val
+            std::vector<std::string> fields = split(e.rowData, '|');
+            std::string condPart = fields.size() > 0 ? fields[0] : "";
+            std::string assignPart = fields.size() > 1 ? fields[1] : "";
+
+            std::vector<std::string> assigns = split(assignPart, '~');
+            if (assigns.size() < 2) continue;
+
+            sql = "UPDATE " + e.table + " SET ";
+            for (int i = 0; i + 1 < (int)assigns.size(); i += 2)
+            {
+                if (i > 0) sql += ", ";
+                sql += assigns[i] + " = " + assigns[i + 1];
+            }
+
+            if (!condPart.empty())
+            {
+                std::vector<std::string> cparts = split(condPart, '~');
+                if (cparts.size() == 3)
+                    sql += " WHERE " + cparts[0] + " " + cparts[1] + " " + cparts[2];
+            }
+        }
+        else continue;
+
+        Lexer lexer(sql);
+        std::vector<Token> tokens = lexer.tokenize();
+        Parser parser(tokens);
+        auto result = parser.parse();
+        if (!result) {
+            std::cerr << "WAL parse error: " << (int)result.error() << std::endl;
+            continue;
+        }
+        Statement *stmt = result.value();
+        if (stmt)
+        {
+            engine.execute(stmt);
+            delete stmt;
+        }
+        commit();
     }
 }

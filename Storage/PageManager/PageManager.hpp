@@ -36,6 +36,7 @@ class PageManager {
         ~PageManager();
         
     private:
+        mutable std::mutex insert_mutex;
         mutable std::shared_mutex cache_mutex;
         mutable std::mutex file_mutex;
         std::string filename;

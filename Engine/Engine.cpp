@@ -135,16 +135,20 @@ void Engine::executeSelect(const SelectStatement &stmt)
 
 void Engine::executeDelete(const DeleteStatement &stmt)
 {
+    wal.logDelete(stmt.getTable(), stmt.getCondition());
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme);
     table.deleteRow(stmt.getCondition());
+    wal.commit();
 }
 
 void Engine::executeUpdate(const UpdateStatement &stmt)
 {
+    wal.logUpdate(stmt.getTable(), stmt.getCondition(), stmt.getAssignments());
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme);
     table.updateRow(stmt.getCondition(), stmt.getAssignments());
+    wal.commit();
 }
 
 std::vector<Row> Engine::query(const std::string &sql)

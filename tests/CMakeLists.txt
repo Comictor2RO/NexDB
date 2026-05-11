@@ -40,8 +40,7 @@ add_executable(tests test_lexer.cpp
         test_engine.cpp
         test_network.cpp)
 
-set(ASIO_DIR "C:/Program Files/JetBrains/CLion 2025.3.3/bin/mingw/asio-1.36.0/asio-1.36.0/include")
-target_include_directories(tests PRIVATE ../Frontend/Lexer ${ASIO_DIR})
+target_include_directories(tests PRIVATE ../Frontend/Lexer ${asio_SOURCE_DIR}/asio/include)
 target_compile_definitions(tests PRIVATE ASIO_STANDALONE)
 
 # Link GTest și threading
