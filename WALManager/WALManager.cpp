@@ -3,6 +3,32 @@
 #include "../Frontend/Lexer/Lexer.hpp"
 #include "../Frontend/Parser/Parser.hpp"
 #include "../StringUtils/StringUtils.hpp"
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
+static void syncFile(const std::string &filename)
+{
+#ifdef _WIN32
+    HANDLE h = CreateFileA(filename.c_str(), GENERIC_WRITE,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        FlushFileBuffers(h);
+        CloseHandle(h);
+    }
+#else
+    int fd = open(filename.c_str(), O_WRONLY);
+    if (fd >= 0) {
+        fsync(fd);
+        close(fd);
+    }
+#endif
+}
 
 WALManager::WALManager(std::string filename)
     : filename(filename)
@@ -97,6 +123,7 @@ void WALManager::commit()
 
     file.flush();
     file.close();
+    syncFile(filename);
     file.open(filename, std::ios::in | std::ios::out | std::ios::app);
 }
 

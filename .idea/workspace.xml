@@ -35,22 +35,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/Config/Config.cpp" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Config/Config.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Engine/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Engine/Engine.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUI/GUI.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUI/GUI.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/PageManager/PageManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/PageManager/PageManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/PageManager/PageManager.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/PageManager/PageManager.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Table/Table.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Table/Table.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Table/Table.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Table/Table.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/main.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/tests/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/WALManager/WALManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/WALManager/WALManager.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -190,7 +176,7 @@
       <option name="presentableId" value="Default" />
       <updated>1778536925134</updated>
       <workItem from="1778536926595" duration="134000" />
-      <workItem from="1778613463468" duration="3000000" />
+      <workItem from="1778613463468" duration="3669000" />
     </task>
     <servers />
   </component>
