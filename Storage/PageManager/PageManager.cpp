@@ -1,6 +1,6 @@
 #include "PageManager.hpp"
 
-PageManager::PageManager(std::string filename) : cache(16, file) {
+PageManager::PageManager(std::string filename, int cacheCapacity) : cache(cacheCapacity, file) {
     std::unique_lock<std::mutex> lock(file_mutex);
     this->filename = filename;
     file.open(filename, std::ios::in | std::ios::out | std::ios::binary);

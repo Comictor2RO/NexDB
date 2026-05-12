@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-Engine::Engine(Catalog &catalog) : catalog(catalog), wal("engine.wal")
+Engine::Engine(Catalog &catalog, int cacheCapacity) : catalog(catalog), wal("engine.wal"), cacheCapacity(cacheCapacity)
 {
     wal.recover(*this);
 }
@@ -43,14 +43,14 @@ void Engine::executeDrop(const DropStatement &stmt)
 void Engine::dropTableStorage(const std::string &tableName)
 {
     std::vector<Columns> scheme = catalog.getColumns(tableName);
-    Table table(tableName, scheme);
+    Table table(tableName, scheme, cacheCapacity);
     table.dropStorage();
 }
 
 void Engine::executeInsert(const InsertStatement &stmt)
 {
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme);
+    Table table(stmt.getTable(), scheme, cacheCapacity);
 
     Row row;
     row.values = stmt.getValues();
@@ -95,7 +95,7 @@ void Engine::executeInsert(const InsertStatement &stmt)
 std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
 {
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme);
+    Table table(stmt.getTable(), scheme, cacheCapacity);
 
     std::vector<Row> allRows = table.selectRow(stmt.getCondition());
     const std::vector<std::string> &selectedColumns = stmt.getColumns();
@@ -132,7 +132,7 @@ void Engine::executeDelete(const DeleteStatement &stmt)
 {
     wal.logDelete(stmt.getTable(), stmt.getCondition());
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme);
+    Table table(stmt.getTable(), scheme, cacheCapacity);
     table.deleteRow(stmt.getCondition());
     wal.commit();
 }
@@ -141,7 +141,7 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
 {
     wal.logUpdate(stmt.getTable(), stmt.getCondition(), stmt.getAssignments());
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme);
+    Table table(stmt.getTable(), scheme, cacheCapacity);
     table.updateRow(stmt.getCondition(), stmt.getAssignments());
     wal.commit();
 }

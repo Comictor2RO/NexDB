@@ -13,6 +13,7 @@ set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)  # Doar GTest
 FetchContent_MakeAvailable(googletest)
 
 add_executable(tests test_lexer.cpp
+        ../Config/Config.cpp
         ../Indexing/BPlusTree/BPlusTree.cpp
         ../Storage/LRUCache/LRUCache.cpp
         ../Storage/Page/Page.cpp
@@ -39,7 +40,8 @@ add_executable(tests test_lexer.cpp
         test_wal.cpp
         test_engine.cpp
         test_network.cpp
-        test_pagemanager.cpp)
+        test_pagemanager.cpp
+        test_config.cpp)
 
 target_include_directories(tests PRIVATE ../Frontend/Lexer ${asio_SOURCE_DIR}/asio/include)
 target_compile_definitions(tests PRIVATE ASIO_STANDALONE)

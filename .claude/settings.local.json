@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -rn \"page_size\\\\|PAGE_SIZE\\\\|pageSize\\\\|port\\\\|PORT\" 'C:/Users/comic/Desktop/Proiecte Weekend/NexDB' --include=*.cpp --include=*.hpp --exclude-dir=cmake-build-debug)"
+    ]
+  }
+}

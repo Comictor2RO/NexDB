@@ -11,10 +11,11 @@
 #include "../Engine/Engine.hpp"
 #include "Colors.hpp"
 #include "../Networking/NetworkServer.hpp"
+#include "../Config/Config.hpp"
 
 class GUI {
     public:
-        GUI(Catalog &catalog, Engine &engine);
+        GUI(Catalog &catalog, Engine &engine, const Config &config);
         void run();
     private:
         std::string input;

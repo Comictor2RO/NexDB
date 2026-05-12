@@ -19,7 +19,7 @@ enum class TableError {
 
 class Table {
     public:
-        Table(const std::string &name, const std::vector<Columns> &scheme);
+        Table(const std::string &name, const std::vector<Columns> &scheme, int cacheCapacity = 128);
 
         std::expected<void, TableError> insertRow(const Row &row);
         std::vector<Row> selectRow(Condition *cond);

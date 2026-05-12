@@ -79,8 +79,8 @@ static bool evaluateCondition(const Condition *cond, const Row &row, const std::
     return false;
 }
 
-Table::Table(const std::string &name, const std::vector<Columns> &schema)
-    : name(name), scheme(schema), pageManager(name + ".db"), index(4), nextKey(0)
+Table::Table(const std::string &name, const std::vector<Columns> &schema, int cacheCapacity)
+    : name(name), scheme(schema), pageManager(name + ".db", cacheCapacity), index(4), nextKey(0)
 {
     rebuildIndex();
 }

@@ -34,7 +34,7 @@ struct RateLimitEntry {
 
 class NetworkServer {
     public:
-        NetworkServer(Engine &engine);
+        NetworkServer(Engine &engine, int port = 0, int maxFailures = 3, int banSeconds = 30);
 
         void prepare();
         void run();
@@ -44,6 +44,9 @@ class NetworkServer {
         void setLogCallback(std::function<void(const std::string&)> callback);
 
     private:
+        int configPort;
+        int maxFailures;
+        int banSeconds;
         size_t port = 0;
         asio::io_context io_context;
         tcp::acceptor acceptor;

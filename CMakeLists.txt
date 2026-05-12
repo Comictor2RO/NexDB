@@ -112,6 +112,8 @@ add_executable(NexDB
         GUI/Colors.hpp
         Networking/NetworkServer.cpp
         Networking/NetworkServer.hpp
+        Config/Config.cpp
+        Config/Config.hpp
 )
 
 # Link main app
@@ -123,4 +125,11 @@ add_custom_command(TARGET NexDB POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/resources
         $<TARGET_FILE_DIR:NexDB>/resources
+)
+
+# Copiază config.json lângă executabil
+add_custom_command(TARGET NexDB POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/config.json
+        $<TARGET_FILE_DIR:NexDB>/config.json
 )

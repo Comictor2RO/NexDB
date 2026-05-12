@@ -9,8 +9,8 @@
 #include <sstream>
 #include <iomanip>
 
-NetworkServer::NetworkServer(Engine &engine)
-    : engine(engine), acceptor(io_context)
+NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds)
+    : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds)
 {};
 
 void NetworkServer::prepare()
@@ -78,12 +78,12 @@ bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clie
         if (it != rateLimitMap.end())
         {
             auto &entry = it->second;
-            if (entry.failCount >= 3 && std::chrono::steady_clock::now() < entry.bannedUntil)
+            if (entry.failCount >= maxFailures && std::chrono::steady_clock::now() < entry.bannedUntil)
             {
                 asio::write(socket, asio::buffer(std::string("AUTH BANNED\n")));
                 return false;
             }
-            if (entry.failCount >= 3 && std::chrono::steady_clock::now() >= entry.bannedUntil)
+            if (entry.failCount >= maxFailures && std::chrono::steady_clock::now() >= entry.bannedUntil)
                 entry.failCount = 0;
         }
     }
@@ -119,8 +119,8 @@ bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clie
         std::lock_guard<std::mutex> lock(rateLimitMutex);
         auto &entry = rateLimitMap[clientIp];
         entry.failCount++;
-        if (entry.failCount >= 3)
-            entry.bannedUntil = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        if (entry.failCount >= maxFailures)
+            entry.bannedUntil = std::chrono::steady_clock::now() + std::chrono::seconds(banSeconds);
         asio::write(socket, asio::buffer(std::string("AUTH FAIL\n")));
         return false;
     }
@@ -153,9 +153,24 @@ void NetworkServer::stop()
     std::cout << "Server stopped." << std::endl;
 }
 
-// Opens the server, auto-detecting a free port in range [3000, 8000]
+// Opens the server. If configPort == 0, auto-scans 3000-8000 for a free port.
 void NetworkServer::openServer()
 {
+    if (configPort != 0) {
+        try {
+            acceptor.open(tcp::v4());
+            acceptor.bind(tcp::endpoint(tcp::v4(), configPort));
+            acceptor.listen();
+            port = configPort;
+            return;
+        }
+        catch (const asio::system_error &e) {
+            if (acceptor.is_open())
+                acceptor.close();
+            throw std::runtime_error("Could not bind to port " + std::to_string(configPort) + ": " + e.what());
+        }
+    }
+
     for (size_t p = 3000; p <= 8000; p++) {
         try {
             acceptor.open(tcp::v4());

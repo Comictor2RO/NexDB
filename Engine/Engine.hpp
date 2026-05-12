@@ -14,13 +14,14 @@
 
 class Engine {
     public:
-        Engine(Catalog &catalog);
+        Engine(Catalog &catalog, int cacheCapacity = 128);
 
         void execute(Statement *statement);
         std::vector<Row> query(const std::string &sql);
     private:
         Catalog &catalog;
         WALManager wal;
+        int cacheCapacity;
 
         void executeCreate(const CreateStatement &statement);
         void executeInsert(const InsertStatement &statement);

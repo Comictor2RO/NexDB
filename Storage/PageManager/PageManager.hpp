@@ -13,7 +13,7 @@ class PageManager {
     public:
 
         //Constructor
-        PageManager(std::string filename);
+        PageManager(std::string filename, int cacheCapacity = 128);
 
         //Method
         struct InsertionResult {

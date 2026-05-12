@@ -2,8 +2,8 @@
 
 #include <algorithm>
 
-GUI::GUI(Catalog &catalog, Engine &engine)
-    : catalog(catalog), engine(engine), server(engine), serverRunning(false), isDark(true), cursorPos(0), backspaceRepeatTimer(0)
+GUI::GUI(Catalog &catalog, Engine &engine, const Config &config)
+    : catalog(catalog), engine(engine), server(engine, config.port, config.aux_max_failures, config.aux_timeout), serverRunning(false), isDark(true), cursorPos(0), backspaceRepeatTimer(0)
 {}
 
 void GUI::run()

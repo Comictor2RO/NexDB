@@ -1,0 +1,7 @@
+{
+  "port": 3000,
+  "page_size": 4096,
+  "cache_capacity": 128,
+  "aux_max_failures": 3,
+  "aux_timeout": 30
+}
