@@ -60,7 +60,7 @@ class NetworkServer {
 
         void openServer();
         void acceptConnections();
-        void handleClient(tcp::socket socket);
+        void handleClient(std::shared_ptr<tcp::socket> sharedSocket);
         std::string executeQuery(std::string &query);
 
         void loadOrCreateSecret();

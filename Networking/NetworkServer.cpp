@@ -197,12 +197,12 @@ void NetworkServer::acceptConnections()
             {
                 if (logCallback) logCallback("[SERVER] Client connected from localhost: " + clientIp);
                 asio::write(socket, asio::buffer("AUTH OK\n"));
-                handleClient((std::move(socket)));
+                handleClient((std::make_shared<tcp::socket>(std::move(socket))));
             }
             else if (handleHandshake(socket, clientIp))
             {
                 if (logCallback) logCallback("[SERVER] Client authenticated: " + clientIp);
-                handleClient(std::move(socket));
+                handleClient((std::make_shared<tcp::socket>(std::move(socket))));
             }
             else
             {
@@ -221,9 +221,8 @@ void NetworkServer::acceptConnections()
 }
 
 // Handles communication with a connected client
-void NetworkServer::handleClient(tcp::socket socket)
+void NetworkServer::handleClient(std::shared_ptr<tcp::socket> sharedSocket)
 {
-    auto sharedSocket = std::make_shared<tcp::socket>(std::move(socket));
     auto buffer = std::make_shared<asio::streambuf>();
 
     asio::async_read_until(*sharedSocket, *buffer, "\n", [this, sharedSocket, buffer](asio::error_code ec, std::size_t bytes_transferred) {
@@ -236,7 +235,10 @@ void NetworkServer::handleClient(tcp::socket socket)
 
             auto response = std::make_shared<std::string>(executeQuery(message));
             asio::async_write(*sharedSocket, asio::buffer(*response), [this, sharedSocket, response](asio::error_code ec, std::size_t) {
-                if (ec && logCallback) logCallback("[SERVER ERROR] Send failed: " + ec.message());
+                if (ec && logCallback)
+                    logCallback("[SERVER ERROR] Send failed: " + ec.message());
+                else
+                    handleClient(sharedSocket);
             });
         }
         else {
@@ -249,6 +251,10 @@ std::string NetworkServer::executeQuery(std::string &query)
 {
     std::lock_guard<std::mutex> lock(engineMutex);
     try {
+        std::string upper = query.substr(0, 6);
+        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+        if (logCallback) logCallback("[QUERY] " + upper + " — " + query);
+
         std::vector<Row> rows = engine.query(query);
 
         if (rows.empty())
@@ -262,6 +268,7 @@ std::string NetworkServer::executeQuery(std::string &query)
             }
             result += "\n";
         }
+        result += "END\n";
         return result;
     }
     catch (const std::exception &e) {
