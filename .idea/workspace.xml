@@ -36,12 +36,7 @@
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Engine/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/WALManager/WALManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/WALManager/WALManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_parser.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_parser.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_wal.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_wal.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -177,7 +172,7 @@
       <updated>1778536925134</updated>
       <workItem from="1778536926595" duration="134000" />
       <workItem from="1778613463468" duration="5994000" />
-      <workItem from="1778677410905" duration="1848000" />
+      <workItem from="1778677410905" duration="3390000" />
     </task>
     <servers />
   </component>
