@@ -156,56 +156,41 @@ std::vector<Row> Engine::query(const std::string &sql)
     if (!result) {
         throw std::runtime_error("Parse error in query: " + std::to_string((int)result.error()));
     }
-    Statement *stmt = result.value();
+    std::unique_ptr<Statement> stmt = std::move(result.value());
 
     std::vector<Row> results;
 
     if (!stmt)
         throw std::runtime_error("Invalid SQL query.");
 
-    if (SelectStatement *s = dynamic_cast<SelectStatement*>(stmt))
+    if (SelectStatement *s = dynamic_cast<SelectStatement*>(stmt.get()))
     {
         if (!catalog.tableExists(s->getTable()))
-        {
-            delete stmt;
             throw std::runtime_error("Table " + s->getTable() + " does not exist.");
-        }
-        try { results = executeSelect(*s); }
-        catch (...) { delete stmt; throw; }
+        results = executeSelect(*s);
     }
-    else if (InsertStatement *ins = dynamic_cast<InsertStatement*>(stmt))
+    else if (InsertStatement *ins = dynamic_cast<InsertStatement*>(stmt.get()))
     {
         if (!catalog.tableExists(ins->getTable()))
-        {
-            delete stmt;
             throw std::runtime_error("Table " + ins->getTable() + " does not exist.");
-        }
-        execute(stmt);
+        execute(stmt.get());
     }
-    else if (DeleteStatement *del = dynamic_cast<DeleteStatement*>(stmt))
+    else if (DeleteStatement *del = dynamic_cast<DeleteStatement*>(stmt.get()))
     {
         if (!catalog.tableExists(del->getTable()))
-        {
-            delete stmt;
             throw std::runtime_error("Table " + del->getTable() + " does not exist.");
-        }
-        execute(stmt);
+        execute(stmt.get());
     }
-    else if (DropStatement *drop = dynamic_cast<DropStatement*>(stmt))
+    else if (DropStatement *drop = dynamic_cast<DropStatement*>(stmt.get()))
     {
         if (!catalog.tableExists(drop->getTable()))
-        {
-            delete stmt;
             throw std::runtime_error("Table " + drop->getTable() + " does not exist.");
-        }
-        execute(stmt);
+        execute(stmt.get());
     }
     else
     {
-        execute(stmt);
+        execute(stmt.get());
     }
-
-    delete stmt;
 
     return results;
 }

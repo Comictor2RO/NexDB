@@ -1,4 +1,5 @@
 #include "Parser.hpp"
+#include <memory>
 
 Parser::Parser(const std::vector<Token> &tokens)
     : tokens(tokens), position(0)
@@ -42,7 +43,7 @@ bool Parser::expectToken(TokenType type, const std::string &value)
         return false;
 }
 
-std::expected<CreateStatement*, ParseError> Parser::parseCreate() {
+std::expected<std::unique_ptr<CreateStatement>, ParseError> Parser::parseCreate() {
     if (!expectToken(TokenType::KEYWORD, "CREATE"))
         return std::unexpected(ParseError::MissingKeyword);
 
@@ -93,10 +94,10 @@ std::expected<CreateStatement*, ParseError> Parser::parseCreate() {
     if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
 
-    return new CreateStatement(table, columns);
+    return std::make_unique<CreateStatement>(table, columns);
 }
 
-std::expected<SelectStatement*, ParseError> Parser::parseSelect() {
+std::expected<std::unique_ptr<SelectStatement>, ParseError> Parser::parseSelect() {
     std::vector<std::string> columns;
     std::string table;
 
@@ -142,10 +143,10 @@ std::expected<SelectStatement*, ParseError> Parser::parseSelect() {
     if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
 
-    return new SelectStatement(columns, table, condition);
+    return std::make_unique<SelectStatement>(columns, table, condition);
 }
 
-std::expected<InsertStatement*, ParseError> Parser::parseInsert()
+std::expected<std::unique_ptr<InsertStatement>, ParseError> Parser::parseInsert()
 {
     std::string table;
     std::vector<std::string> values;
@@ -227,10 +228,10 @@ std::expected<InsertStatement*, ParseError> Parser::parseInsert()
     if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
 
-    return new InsertStatement(table, columns, values);
+    return std::make_unique<InsertStatement>(table, columns, values);
 }
 
-std::expected<DeleteStatement*, ParseError> Parser::parseDelete()
+std::expected<std::unique_ptr<DeleteStatement>, ParseError> Parser::parseDelete()
 {
     if (!expectToken(TokenType::KEYWORD, "DELETE"))
         return std::unexpected(ParseError::MissingKeyword);
@@ -253,10 +254,10 @@ std::expected<DeleteStatement*, ParseError> Parser::parseDelete()
     if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
 
-    return new DeleteStatement(table, condition);
+    return std::make_unique<DeleteStatement>(table, condition);
 }
 
-std::expected<DropStatement*, ParseError> Parser::parseDrop()
+std::expected<std::unique_ptr<DropStatement>, ParseError> Parser::parseDrop()
 {
     if (!expectToken(TokenType::KEYWORD, "DROP"))
         return std::unexpected(ParseError::MissingKeyword);
@@ -271,10 +272,10 @@ std::expected<DropStatement*, ParseError> Parser::parseDrop()
     if (currentToken().type != TokenType::END_OF_FILE)
         return std::unexpected(ParseError::ExtraTokens);
 
-    return new DropStatement(table);
+    return std::make_unique<DropStatement>(table);
 }
 
-std::expected<UpdateStatement*, ParseError> Parser::parseUpdate()
+std::expected<std::unique_ptr<UpdateStatement>, ParseError> Parser::parseUpdate()
 {
     if (!expectToken(TokenType::KEYWORD, "UPDATE"))
         return std::unexpected(ParseError::MissingKeyword);
@@ -286,21 +287,15 @@ std::expected<UpdateStatement*, ParseError> Parser::parseUpdate()
     if (!expectToken(TokenType::KEYWORD, "SET"))
         return std::unexpected(ParseError::MissingKeyword);
 
-    auto *stmt = new UpdateStatement(table);
+    auto stmt = std::make_unique<UpdateStatement>(table);
     while (true)
     {
         std::string column = expectToken(TokenType::IDENTIFIER);
         if (column.empty())
-        {
-            delete stmt;
             return std::unexpected(ParseError::InvalidIdentifier);
-        }
 
         if (!expectToken(TokenType::OPERATOR, "="))
-        {
-            delete stmt;
             return std::unexpected(ParseError::UnexpectedToken);
-        }
 
         std::string value = expectToken(TokenType::STRING);
         if (value.empty())
@@ -308,10 +303,7 @@ std::expected<UpdateStatement*, ParseError> Parser::parseUpdate()
         if (value.empty())
             value = expectToken(TokenType::IDENTIFIER);
         if (value.empty())
-        {
-            delete stmt;
             return std::unexpected(ParseError::UnexpectedToken);
-        }
 
         stmt->addAssignements(column, value);
 
@@ -325,18 +317,12 @@ std::expected<UpdateStatement*, ParseError> Parser::parseUpdate()
     {
         auto condRes = parseCondition();
         if (!condRes)
-        {
-            delete stmt;
             return std::unexpected(condRes.error());
-        }
         stmt->setCondition(condRes.value());
     }
 
     if (currentToken().type != TokenType::END_OF_FILE)
-    {
-        delete stmt;
         return std::unexpected(ParseError::ExtraTokens);
-    }
 
     return stmt;
 }
@@ -369,7 +355,7 @@ std::expected<Condition*, ParseError> Parser::parseCondition()
     return condition;
 }
 
-std::expected<Statement*, ParseError> Parser::parse()
+std::expected<std::unique_ptr<Statement>, ParseError> Parser::parse()
 {
     Token token = currentToken();
 

@@ -3,6 +3,7 @@
 #include "../Frontend/Lexer/Lexer.hpp"
 #include "../Frontend/Parser/Parser.hpp"
 #include "../StringUtils/StringUtils.hpp"
+#include <memory>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -86,6 +87,13 @@ std::vector<WALEntry> WALManager::readLog()
         if (line.empty())
             continue;
 
+        if (line == "COMMIT")
+        {
+            for (auto &e : entries)
+                e.committed = true;
+            continue;
+        }
+
         std::vector<std::string> parts = split(line, '|');
 
         if (parts.size() < 4)
@@ -109,18 +117,7 @@ std::vector<WALEntry> WALManager::readLog()
 
 void WALManager::commit()
 {
-    std::vector<WALEntry> entries = readLog();
-    if (entries.empty()) return;
-
-    entries.back().committed = true;
-
-    file.close();
-    file.open(filename, std::ios::out | std::ios::trunc);
-
-    for (const auto &e : entries)
-        file << e.type << "|" << e.table << "|" << e.rowData << "|"
-             << (e.committed ? "1" : "0") << "\n";
-
+    file << "COMMIT\n";
     file.flush();
     file.close();
     syncFile(filename);
@@ -155,13 +152,13 @@ void WALManager::recover(Engine &engine)
         }
         else if (e.type == "UPDATE")
         {
-            // rowData format: condcol~condop~condval|a1col~a1val~a2col~a2val
             std::vector<std::string> fields = split(e.rowData, '|');
             std::string condPart = fields.size() > 0 ? fields[0] : "";
             std::string assignPart = fields.size() > 1 ? fields[1] : "";
 
             std::vector<std::string> assigns = split(assignPart, '~');
-            if (assigns.size() < 2) continue;
+            if (assigns.size() < 2)
+                continue;
 
             sql = "UPDATE " + e.table + " SET ";
             for (int i = 0; i + 1 < (int)assigns.size(); i += 2)
@@ -177,7 +174,8 @@ void WALManager::recover(Engine &engine)
                     sql += " WHERE " + cparts[0] + " " + cparts[1] + " " + cparts[2];
             }
         }
-        else continue;
+        else
+            continue;
 
         Lexer lexer(sql);
         std::vector<Token> tokens = lexer.tokenize();
@@ -187,12 +185,9 @@ void WALManager::recover(Engine &engine)
             std::cerr << "WAL parse error: " << (int)result.error() << std::endl;
             continue;
         }
-        Statement *stmt = result.value();
+        std::unique_ptr<Statement> stmt = std::move(result.value());
         if (stmt)
-        {
-            engine.execute(stmt);
-            delete stmt;
-        }
+            engine.execute(stmt.get());
         commit();
     }
 }

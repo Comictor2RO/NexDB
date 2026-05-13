@@ -10,6 +10,7 @@
 #include "../../AST/UpdateStatement/UpdateStatement.hpp"
 #include <vector>
 #include <expected>
+#include <memory>
 
 enum class ParseError {
     UnexpectedToken, MissingKeyword, MissingPunctuation, InvalidIdentifier,
@@ -26,7 +27,7 @@ struct ParseResult {
 class Parser {
     public:
         Parser(const std::vector<Token> &tokens);
-        std::expected<Statement *, ParseError>parse();
+        std::expected<std::unique_ptr<Statement>, ParseError> parse();
     private:
         std::vector<Token> tokens;
         int position;
@@ -36,13 +37,13 @@ class Parser {
         std::string expectToken(TokenType type);
         bool expectToken(TokenType type, const std::string &value);
 
-        std::expected<CreateStatement *, ParseError>parseCreate();
-        std::expected<SelectStatement *, ParseError>parseSelect();
-        std::expected<InsertStatement *, ParseError>parseInsert();
-        std::expected<DeleteStatement *, ParseError>parseDelete();
-        std::expected<DropStatement *, ParseError>parseDrop();
-        std::expected<UpdateStatement *, ParseError>parseUpdate();
-        std::expected<Condition *, ParseError>parseCondition();
+        std::expected<std::unique_ptr<CreateStatement>, ParseError> parseCreate();
+        std::expected<std::unique_ptr<SelectStatement>, ParseError> parseSelect();
+        std::expected<std::unique_ptr<InsertStatement>, ParseError> parseInsert();
+        std::expected<std::unique_ptr<DeleteStatement>, ParseError> parseDelete();
+        std::expected<std::unique_ptr<DropStatement>, ParseError> parseDrop();
+        std::expected<std::unique_ptr<UpdateStatement>, ParseError> parseUpdate();
+        std::expected<Condition *, ParseError> parseCondition();
 };
 
 

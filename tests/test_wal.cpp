@@ -41,28 +41,30 @@ TEST_F(WALManagerTest, LogInsertCreatesEntry) {
     EXPECT_EQ(lines[0], "INSERT|users|1|Alice|25|0");
 }
 
-//Test 2: commit marks the last WAL entry as committed
+//Test 2: commit appends COMMIT marker after entry
 TEST_F(WALManagerTest, CommitUpdatesEntry) {
     WALManager wal(testWalFile);
     wal.logInsert("users", "1|Alice|25");
     wal.commit();
 
     auto lines = readWalLines();
-    ASSERT_EQ(lines.size(), 1);
-    EXPECT_EQ(lines[0], "INSERT|users|1|Alice|25|1");
+    ASSERT_EQ(lines.size(), 2);
+    EXPECT_EQ(lines[0], "INSERT|users|1|Alice|25|0");
+    EXPECT_EQ(lines[1], "COMMIT");
 }
 
-//Test 3: multiple inserts log correctly and commit only marks the last entry
+//Test 3: multiple inserts followed by commit appends COMMIT marker
 TEST_F(WALManagerTest, MultipleInsertsAndCommit) {
     WALManager wal(testWalFile);
     wal.logInsert("users", "1|Alice|25");
     wal.logInsert("users", "2|Bob|30");
-    wal.commit(); // Commits the last one
+    wal.commit();
 
     auto lines = readWalLines();
-    ASSERT_EQ(lines.size(), 2);
+    ASSERT_EQ(lines.size(), 3);
     EXPECT_EQ(lines[0], "INSERT|users|1|Alice|25|0");
-    EXPECT_EQ(lines[1], "INSERT|users|2|Bob|30|1");
+    EXPECT_EQ(lines[1], "INSERT|users|2|Bob|30|0");
+    EXPECT_EQ(lines[2], "COMMIT");
 }
 
 //Test 4: recover replays uncommitted WAL entries and inserts the rows into the table
