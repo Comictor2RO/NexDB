@@ -21,6 +21,7 @@ class GUI {
         std::string input;
         int cursorPos;
         int resultsScrollIndex = 0;
+        int logScrollIndex = 0;
         float backspaceRepeatTimer;
         std::vector<Row> results;
         std::vector<std::string> logs;

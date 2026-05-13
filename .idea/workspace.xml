@@ -35,9 +35,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUI/GUI.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUI/GUI.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.hpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -178,7 +177,7 @@
       <updated>1778536925134</updated>
       <workItem from="1778536926595" duration="134000" />
       <workItem from="1778613463468" duration="5994000" />
-      <workItem from="1778677410905" duration="9375000" />
+      <workItem from="1778677410905" duration="9837000" />
     </task>
     <servers />
   </component>

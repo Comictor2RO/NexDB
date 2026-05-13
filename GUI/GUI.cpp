@@ -108,15 +108,26 @@ void GUI::handleInput()
     if (!IsKeyDown(KEY_BACKSPACE))
         backspaceRepeatTimer = 0;
 
-    // Scroll results
     float wheel = GetMouseWheelMove();
     if (wheel != 0)
     {
-        resultsScrollIndex -= (int)wheel * 3; // Scroll 3 rows at a time
-        if (resultsScrollIndex < 0) resultsScrollIndex = 0;
-        int maxScroll = (int)results.size() - 5; // Keep some rows visible
-        if (maxScroll < 0) maxScroll = 0;
-        if (resultsScrollIndex > maxScroll) resultsScrollIndex = maxScroll;
+        if (GetMouseY() > 520)
+        {
+            // Scroll logs (bottom-anchored: 0 = newest, higher = older)
+            logScrollIndex += (int)wheel * 3;
+            if (logScrollIndex < 0) logScrollIndex = 0;
+            int maxLogScroll = std::max(0, (int)logs.size() - (200 - 30) / 19);
+            if (logScrollIndex > maxLogScroll) logScrollIndex = maxLogScroll;
+        }
+        else
+        {
+            // Scroll results
+            resultsScrollIndex -= (int)wheel * 3;
+            if (resultsScrollIndex < 0) resultsScrollIndex = 0;
+            int maxScroll = (int)results.size() - 5;
+            if (maxScroll < 0) maxScroll = 0;
+            if (resultsScrollIndex > maxScroll) resultsScrollIndex = maxScroll;
+        }
     }
 
     if (IsKeyPressed(KEY_ENTER) && !input.empty())
@@ -277,13 +288,26 @@ void GUI::drawLogPanel()
     int maxLines   = (200 - 30) / lineHeight;
 
     std::lock_guard<std::mutex> lock(logsMutex);
-    int startIdx   = (int)logs.size() > maxLines ? (int)logs.size() - maxLines : 0;
 
-    for (int i = startIdx; i < (int)logs.size(); i++)
+    int maxScroll = std::max(0, (int)logs.size() - maxLines);
+    if (logScrollIndex > maxScroll) logScrollIndex = maxScroll;
+    int startIdx = maxScroll - logScrollIndex;
+
+    for (int i = startIdx; i < startIdx + maxLines && i < (int)logs.size(); i++)
     {
         int y = 550 + (i - startIdx) * lineHeight;
         bool isError = logs[i].find("ERROR") != std::string::npos;
         Color c = isError ? (isDark ? ERROR_DARK : ERROR_LIGHT) : (isDark ? SUCCESS_DARK : SUCCESS_LIGHT);
         DrawTextEx(bold, logs[i].c_str(), Vector2{10, (float)y}, 20, 2, c);
+    }
+
+    if ((int)logs.size() > maxLines)
+    {
+        float scrollAreaHeight = 200 - 30;
+        float barHeight = std::max(20.0f, scrollAreaHeight * ((float)maxLines / logs.size()));
+        float scrollProgress = (float)logScrollIndex / maxScroll;
+        float barY = 550 + (1.0f - scrollProgress) * (scrollAreaHeight - barHeight);
+        DrawRectangle(1270, 550, 10, (int)scrollAreaHeight, ColorAlpha(GRAY, 0.3f));
+        DrawRectangle(1270, (int)barY, 10, (int)barHeight, isDark ? LIGHTGRAY : DARKGRAY);
     }
 }
