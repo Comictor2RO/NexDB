@@ -32,6 +32,44 @@ bool Table::validateValueForType(const std::string &value, const std::string &ty
         return true;
     }
 
+    if (type == "FLOAT") {
+        if (value.empty())
+            return false;
+
+        int start = 0;
+        if (value[0] == '-' || value[0] == '+')
+            start = 1;
+
+        if (start == static_cast<int>(value.size()))
+            return false;
+
+        bool hasDot = false;
+        for (int i = start; i < static_cast<int>(value.size()); i++)
+        {
+            if (value[i] == '.')
+            {
+                if (hasDot)
+                        return false;
+                hasDot = true;
+            }
+            else if (!std::isdigit((unsigned char) value[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (type == "BOOL" || type == "BOOLEAN") {
+        return value == "true" || value == "false"
+                || value == "1" || value == "0"
+                || value == "TRUE" || value == "FALSE";
+    }
+
+    if (type == "NULL") {
+        return value == "NULL" || value == "null";
+    }
+
+
     if (type == "STRING" || type == "TEXT")
         return true;
     return false;
@@ -72,10 +110,12 @@ static bool evaluateCondition(const Condition *cond, const Row &row, const std::
 
     if (cond->op == "=")  return rowValue == cond->value;
     if (cond->op == "!=") return rowValue != cond->value;
-    if (cond->op == ">")  return std::stoi(rowValue) > std::stoi(cond->value);
-    if (cond->op == "<")  return std::stoi(rowValue) < std::stoi(cond->value);
-    if (cond->op == ">=") return std::stoi(rowValue) >= std::stoi(cond->value);
-    if (cond->op == "<=") return std::stoi(rowValue) <= std::stoi(cond->value);
+    try {
+        if (cond->op == ">")  return std::stod(rowValue) > std::stod(cond->value);
+        if (cond->op == "<")  return std::stod(rowValue) < std::stod(cond->value);
+        if (cond->op == ">=") return std::stod(rowValue) >= std::stod(cond->value);
+        if (cond->op == "<=") return std::stod(rowValue) <= std::stod(cond->value);
+    } catch (...) { return false; }
     return false;
 }
 

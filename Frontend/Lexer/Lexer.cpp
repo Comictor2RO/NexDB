@@ -34,7 +34,7 @@ Token Lexer::readWord()
         || uppercaseWord == "VALUES" || uppercaseWord == "CREATE" || uppercaseWord == "TABLE"
         || uppercaseWord == "INT" || uppercaseWord == "STRING" || uppercaseWord == "DROP"
         || uppercaseWord == "UPDATE" || uppercaseWord == "SET" || uppercaseWord == "USE"
-        || uppercaseWord == "DATABASE")
+        || uppercaseWord == "DATABASE" || uppercaseWord == "FLOAT" || uppercaseWord == "BOOL")
     {
         return {TokenType::KEYWORD, uppercaseWord};
     }
@@ -46,8 +46,11 @@ Token Lexer::readWord()
 Token Lexer::readNumber()
 {
     std::string number;
-    while(position < input.length() && isdigit(input[position]))
+    bool hasDot = false;
+    while(position < input.length() && (isdigit(input[position]) || (input[position] == '.' && !hasDot)))
     {
+        if (input[position] == '.')
+            hasDot = true;
         number += input[position];
         position++;
     }

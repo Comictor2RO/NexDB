@@ -70,7 +70,7 @@ std::expected<std::unique_ptr<CreateStatement>, ParseError> Parser::parseCreate(
             return std::unexpected(ParseError::InvalidIdentifier);
 
         col.type = expectToken(TokenType::KEYWORD);
-        if (col.type != "INT" && col.type != "STRING")
+        if (col.type != "INT" && col.type != "STRING" && col.type != "FLOAT" && col.type != "BOOL")
             return std::unexpected(ParseError::InvalidType);
 
         columns.push_back(col);
