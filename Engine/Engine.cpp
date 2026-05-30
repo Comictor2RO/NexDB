@@ -2,12 +2,38 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <filesystem>
+#include <fstream>
 
-Engine::Engine(Catalog &catalog, int cacheCapacity,
-               const std::string &storagePath, const std::string &walPath)
-    : catalog(catalog), storage(storagePath), wal(walPath), cacheCapacity(cacheCapacity)
+Engine::Engine(int cacheCapacity,
+               const std::string &storagePath,
+               const std::string &catalogPath,
+               const std::string &walPath)
+    : catalog(std::make_unique<Catalog>(catalogPath)),
+      storage(std::make_unique<StorageFile>(storagePath)),
+      wal(std::make_unique<WALManager>(walPath)),
+      cacheCapacity(cacheCapacity)
 {
-    wal.recover(*this);
+    wal->recover(*this);
+}
+
+Catalog& Engine::getCatalog()
+{
+    return *catalog;
+}
+
+void Engine::switchDatabase(const std::string &storagePath,
+                            const std::string &catalogPath,
+                            const std::string &walPath)
+{
+    wal.reset();
+    storage.reset();
+    catalog.reset();
+
+    catalog = std::make_unique<Catalog>(catalogPath);
+    storage = std::make_unique<StorageFile>(storagePath);
+    wal     = std::make_unique<WALManager>(walPath);
+    wal->recover(*this);
 }
 
 void Engine::execute(Statement *statement)
@@ -26,31 +52,35 @@ void Engine::execute(Statement *statement)
         executeDrop(*stmt);
     else if (UpdateStatement *stmt = dynamic_cast<UpdateStatement *>(statement))
         executeUpdate(*stmt);
+    else if (CreateDatabaseStatement *stmt = dynamic_cast<CreateDatabaseStatement *>(statement))
+        executeCreateDatabase(*stmt);
+    else if (UseDatabaseStatement *stmt = dynamic_cast<UseDatabaseStatement *>(statement))
+        executeUseDatabase(*stmt);
 }
 
 void Engine::executeCreate(const CreateStatement &stmt)
 {
-    catalog.createTable(stmt.getTable(), stmt.getColumns());
+    catalog->createTable(stmt.getTable(), stmt.getColumns());
 }
 
 void Engine::executeDrop(const DropStatement &stmt)
 {
-    if (!catalog.tableExists(stmt.getTable()))
+    if (!catalog->tableExists(stmt.getTable()))
         throw std::runtime_error("Table " + stmt.getTable() + " does not exist.");
 
     dropTableStorage(stmt.getTable());
-    catalog.dropTable(stmt.getTable());
+    catalog->dropTable(stmt.getTable());
 }
 
 void Engine::dropTableStorage(const std::string &tableName)
 {
-    storage.freePagesForTable(catalog.getTableId(tableName));
+    storage->freePagesForTable(catalog->getTableId(tableName));
 }
 
 void Engine::executeInsert(const InsertStatement &stmt)
 {
-    std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
+    std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
+    Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
 
     Row row;
     row.values = stmt.getValues();
@@ -62,7 +92,7 @@ void Engine::executeInsert(const InsertStatement &stmt)
         rowData += row.values[i];
     }
 
-    wal.logInsert(stmt.getTable(), rowData);
+    wal->logInsert(stmt.getTable(), rowData);
 
     auto result = table.insertRow(row);
     if (!result)
@@ -89,13 +119,13 @@ void Engine::executeInsert(const InsertStatement &stmt)
         throw std::runtime_error(errorMsg);
     }
 
-    wal.commit();
+    wal->commit();
 }
 
 std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
 {
-    std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
+    std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
+    Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
 
     std::vector<Row> allRows = table.selectRow(stmt.getCondition());
     const std::vector<std::string> &selectedColumns = stmt.getColumns();
@@ -130,20 +160,47 @@ std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
 
 void Engine::executeDelete(const DeleteStatement &stmt)
 {
-    wal.logDelete(stmt.getTable(), stmt.getCondition());
-    std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
+    wal->logDelete(stmt.getTable(), stmt.getCondition());
+    std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
+    Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
     table.deleteRow(stmt.getCondition());
-    wal.commit();
+    wal->commit();
 }
 
 void Engine::executeUpdate(const UpdateStatement &stmt)
 {
-    wal.logUpdate(stmt.getTable(), stmt.getCondition(), stmt.getAssignments());
-    std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
+    wal->logUpdate(stmt.getTable(), stmt.getCondition(), stmt.getAssignments());
+    std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
+    Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
     table.updateRow(stmt.getCondition(), stmt.getAssignments());
-    wal.commit();
+    wal->commit();
+}
+
+std::string Engine::consumePendingSwitch()
+{
+    std::string s = pendingSwitch;
+    pendingSwitch.clear();
+    return s;
+}
+
+void Engine::executeCreateDatabase(const CreateDatabaseStatement &stmt)
+{
+    std::filesystem::create_directories("databases");
+    std::string base = "databases/" + stmt.getName();
+    if (!std::filesystem::exists(base + ".db"))
+        std::ofstream(base + ".db").close();
+    if (!std::filesystem::exists(base + ".cat"))
+        std::ofstream(base + ".cat").close();
+}
+
+void Engine::executeUseDatabase(const UseDatabaseStatement &stmt)
+{
+    std::string base = "databases/" + stmt.getName();
+    if (!std::filesystem::exists(base + ".db"))
+        throw std::runtime_error("Database '" + stmt.getName() + "' does not exist. Use CREATE DATABASE first.");
+
+    switchDatabase(base + ".db", base + ".cat", base + ".wal");
+    pendingSwitch = stmt.getName();
 }
 
 std::vector<Row> Engine::query(const std::string &sql)
@@ -165,25 +222,25 @@ std::vector<Row> Engine::query(const std::string &sql)
 
     if (SelectStatement *s = dynamic_cast<SelectStatement*>(stmt.get()))
     {
-        if (!catalog.tableExists(s->getTable()))
+        if (!catalog->tableExists(s->getTable()))
             throw std::runtime_error("Table " + s->getTable() + " does not exist.");
         results = executeSelect(*s);
     }
     else if (InsertStatement *ins = dynamic_cast<InsertStatement*>(stmt.get()))
     {
-        if (!catalog.tableExists(ins->getTable()))
+        if (!catalog->tableExists(ins->getTable()))
             throw std::runtime_error("Table " + ins->getTable() + " does not exist.");
         execute(stmt.get());
     }
     else if (DeleteStatement *del = dynamic_cast<DeleteStatement*>(stmt.get()))
     {
-        if (!catalog.tableExists(del->getTable()))
+        if (!catalog->tableExists(del->getTable()))
             throw std::runtime_error("Table " + del->getTable() + " does not exist.");
         execute(stmt.get());
     }
     else if (DropStatement *drop = dynamic_cast<DropStatement*>(stmt.get()))
     {
-        if (!catalog.tableExists(drop->getTable()))
+        if (!catalog->tableExists(drop->getTable()))
             throw std::runtime_error("Table " + drop->getTable() + " does not exist.");
         execute(stmt.get());
     }

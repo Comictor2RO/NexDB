@@ -355,25 +355,67 @@ std::expected<Condition*, ParseError> Parser::parseCondition()
     return condition;
 }
 
+std::expected<std::unique_ptr<CreateDatabaseStatement>, ParseError> Parser::parseCreateDatabase()
+{
+    if (!expectToken(TokenType::KEYWORD, "CREATE"))
+        return std::unexpected(ParseError::MissingKeyword);
+
+    if (!expectToken(TokenType::KEYWORD, "DATABASE"))
+        return std::unexpected(ParseError::MissingKeyword);
+
+    std::string name = expectToken(TokenType::IDENTIFIER);
+    if (name.empty())
+        return std::unexpected(ParseError::InvalidIdentifier);
+
+    if (currentToken().type != TokenType::END_OF_FILE)
+        return std::unexpected(ParseError::ExtraTokens);
+
+    return std::make_unique<CreateDatabaseStatement>(name);
+}
+
+std::expected<std::unique_ptr<UseDatabaseStatement>, ParseError> Parser::parseUseDatabase()
+{
+    if (!expectToken(TokenType::KEYWORD, "USE"))
+        return std::unexpected(ParseError::MissingKeyword);
+
+    // Support both: USE mydb  and  USE DATABASE mydb
+    expectToken(TokenType::KEYWORD, "DATABASE");
+
+    std::string name = expectToken(TokenType::IDENTIFIER);
+    if (name.empty())
+        return std::unexpected(ParseError::InvalidIdentifier);
+
+    if (currentToken().type != TokenType::END_OF_FILE)
+        return std::unexpected(ParseError::ExtraTokens);
+
+    return std::make_unique<UseDatabaseStatement>(name);
+}
+
 std::expected<std::unique_ptr<Statement>, ParseError> Parser::parse()
 {
     Token token = currentToken();
 
     if (token.type != TokenType::KEYWORD)
         return std::unexpected(ParseError::MissingKeyword);
-    
+
     if (token.value == "SELECT")
         return parseSelect();
     if (token.value == "INSERT")
         return parseInsert();
     if (token.value == "DELETE")
         return parseDelete();
-    if (token.value == "CREATE")
+    if (token.value == "CREATE") {
+        // Peek at next token to distinguish CREATE TABLE vs CREATE DATABASE
+        if (position + 1 < (int)tokens.size() && tokens[position + 1].value == "DATABASE")
+            return parseCreateDatabase();
         return parseCreate();
+    }
     if (token.value == "DROP")
         return parseDrop();
     if (token.value == "UPDATE")
         return parseUpdate();
-    
+    if (token.value == "USE")
+        return parseUseDatabase();
+
     return std::unexpected(ParseError::UnexpectedToken);
 }

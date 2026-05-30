@@ -254,6 +254,10 @@ std::string NetworkServer::executeQuery(std::string &query)
 
         std::vector<Row> rows = engine.query(query);
 
+        std::string pending = engine.consumePendingSwitch();
+        if (!pending.empty())
+            return "SWITCH " + pending + "\n";
+
         if (rows.empty())
             return "OK\n";
 

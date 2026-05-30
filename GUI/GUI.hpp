@@ -15,7 +15,7 @@
 
 class GUI {
     public:
-        GUI(Catalog &catalog, Engine &engine, const Config &config);
+        GUI(Engine &engine, const Config &config);
         void run();
     private:
         std::string input;
@@ -27,7 +27,6 @@ class GUI {
         std::vector<std::string> logs;
         std::mutex logsMutex;
         bool isDark;
-        Catalog &catalog;
         Engine &engine;
         NetworkServer server;
         std::thread serverThread;

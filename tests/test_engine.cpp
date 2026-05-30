@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include "../Engine/Engine.hpp"
-#include "../Catalog/Catalog.hpp"
 #include <cstdio>
 
 class EngineTest : public ::testing::Test {
@@ -9,18 +8,15 @@ protected:
     const std::string dbFile   = "test_engine.db";
     const std::string walFile  = "test_engine.wal";
 
-    Catalog *catalog = nullptr;
     Engine *engine = nullptr;
 
     void SetUp() override {
         cleanup();
-        catalog = new Catalog(catFile);
-        engine = new Engine(*catalog, 128, dbFile, walFile);
+        engine = new Engine(128, dbFile, catFile, walFile);
     }
 
     void TearDown() override {
         delete engine;
-        delete catalog;
         cleanup();
     }
 
@@ -34,7 +30,7 @@ protected:
 //Test 1: CREATE TABLE via SQL updates the catalog
 TEST_F(EngineTest, CreateTableViaSQL) {
     EXPECT_NO_THROW(engine->query("CREATE TABLE eng_users (id INT, name STRING)"));
-    EXPECT_TRUE(catalog->tableExists("eng_users"));
+    EXPECT_TRUE(engine->getCatalog().tableExists("eng_users"));
 }
 
 //Test 2: INSERT followed by SELECT * returns all inserted rows
@@ -103,10 +99,10 @@ TEST_F(EngineTest, UpdateWithCondition) {
 //Test 7: DROP TABLE removes the table from the catalog
 TEST_F(EngineTest, DropTable) {
     engine->query("CREATE TABLE eng_drop (id INT, name STRING)");
-    EXPECT_TRUE(catalog->tableExists("eng_drop"));
+    EXPECT_TRUE(engine->getCatalog().tableExists("eng_drop"));
 
     engine->query("DROP TABLE eng_drop");
-    EXPECT_FALSE(catalog->tableExists("eng_drop"));
+    EXPECT_FALSE(engine->getCatalog().tableExists("eng_drop"));
 }
 
 //Test 8: SELECT on a non-existent table throws a runtime error
@@ -138,13 +134,12 @@ TEST_F(EngineTest, CatalogPersistsAcrossEngineInstances) {
     engine->query("INSERT INTO eng_orders VALUES (1, 100)");
 
     delete engine;
-    delete catalog;
+    engine = nullptr;
 
     std::remove(walFile.c_str());
-    catalog = new Catalog(catFile);
-    engine = new Engine(*catalog, 128, dbFile, walFile);
+    engine = new Engine(128, dbFile, catFile, walFile);
 
-    EXPECT_TRUE(catalog->tableExists("eng_orders"));
+    EXPECT_TRUE(engine->getCatalog().tableExists("eng_orders"));
     auto results = engine->query("SELECT * FROM eng_orders");
     ASSERT_EQ(results.size(), 1);
     EXPECT_EQ(results[0].values[1], "100");

@@ -39,6 +39,30 @@ Once you press the **Start Server** button, the **logs** section will display th
 
 ---
 
+## What's new in this version
+
+### Multi-table database files
+Previously each table was stored in its own `.db` file. Now all tables share a single `.db` file per database. Pages are tagged with a `tableId` in the page header — the storage layer allocates and reclaims pages per table automatically.
+
+### `databases/` folder
+All database files (`*.db`, `*.cat`, `*.wal`) are now stored inside a `databases/` subdirectory, created automatically on startup. The active database is selected via `config.json`.
+
+### `CREATE DATABASE` / `USE DATABASE` commands
+Two new SQL commands for managing multiple databases:
+
+```sql
+CREATE DATABASE myproject
+USE DATABASE myproject
+USE myproject
+```
+
+`CREATE DATABASE` creates the database files on disk. `USE DATABASE` signals the client to switch context (returns `SWITCH <name>` over TCP — the client is expected to reconnect targeting that database).
+
+### Localhost bypass
+Connections from `127.0.0.1` or `::1` skip the challenge-response handshake and receive `AUTH OK` immediately. This makes local tooling (Python scripts, GUI) simpler. Remote connections still require full authentication.
+
+---
+
 ## Configuration
 
 NexDB reads `config.json` from the same directory as the executable at startup. If the file is missing, built-in defaults are used.
@@ -49,7 +73,8 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
   "page_size": 4096,
   "cache_capacity": 128,
   "aux_max_failures": 3,
-  "aux_timeout": 30
+  "aux_timeout": 30,
+  "database": "mydb"
 }
 ```
 
@@ -60,6 +85,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
 | `cache_capacity` | `128` | Number of pages held in LRU cache |
 | `aux_max_failures` | `3` | Failed auth attempts before IP ban |
 | `aux_timeout` | `30` | Ban duration in seconds |
+| `database` | `"mydb"` | Active database name (files stored in `databases/`) |
 
 ---
 
@@ -69,7 +95,9 @@ The server listens on the port configured in `config.json` (default 3000).
 
 ### Authentication
 
-Every new connection must complete a challenge-response handshake before sending SQL:
+Connections from **localhost** (`127.0.0.1` / `::1`) receive `AUTH OK` immediately — no handshake required.
+
+Remote connections must complete a challenge-response handshake:
 
 ```
 Server → Client:  CHALLENGE <16-byte-hex-nonce>\n
@@ -93,7 +121,8 @@ SELECT * FROM users WHERE age > 18\n
 | Case | Response |
 |------|----------|
 | Success, no rows | `OK\n` |
-| Success, with rows | `col1\|col2\|col3\n` per row |
+| Success, with rows | `col1\|col2\|col3\n` per row, then `END\n` |
+| Database switch (`USE`) | `SWITCH <dbname>\n` |
 | Error | `ERROR: <message>\n` |
 
 ---
@@ -189,17 +218,21 @@ db.Query("DELETE FROM users WHERE id = 2");
 ## Supported SQL
 
 ```sql
+-- Database management
+CREATE DATABASE myproject
+USE DATABASE myproject
+USE myproject
+
+-- Table management
 CREATE TABLE products (id INT, name TEXT, price INT)
-
-INSERT INTO products VALUES (1, Widget, 99)
-
-SELECT * FROM products WHERE price > 50
-
-UPDATE products SET price = 79 WHERE id = 1
-
-DELETE FROM products WHERE id = 1
-
 DROP TABLE products
+
+-- Data manipulation
+INSERT INTO products VALUES (1, Widget, 99)
+SELECT * FROM products
+SELECT name, price FROM products WHERE price > 50
+UPDATE products SET price = 79 WHERE id = 1
+DELETE FROM products WHERE id = 1
 ```
 
 Supported types: `INT`, `STRING`, `TEXT`
@@ -228,16 +261,19 @@ Dependencies (ASIO, Raylib, GTest) are fetched automatically via CMake FetchCont
 
 ```
 NexDB/
-├── Config/         JSON config loader (port, cache, auth settings)
+├── Config/         JSON config loader (port, cache, auth, database name)
 ├── Frontend/       SQL lexer + parser → AST
 ├── Engine/         Query executor
+├── AST/            Statement types (Select, Insert, Delete, Update,
+│                   Create/Drop Table, Create/Use Database)
 ├── Storage/
-│   ├── Page/       Fixed-size page (4096 bytes)
-│   ├── PageHeader/ Page metadata
-│   ├── PageManager/ Read/write pages with thread-safe LRU cache
-│   └── LRUCache/   LRU eviction with dirty-page tracking
+│   ├── Page/         Fixed-size page (4096 bytes), tagged with tableId
+│   ├── PageHeader/   Page metadata (pageId, tableId, freeSpace, rowCount)
+│   ├── StorageFile/  Shared .db file manager — allocates/frees pages per tableId
+│   ├── PageManager/  Per-table read/write with thread-safe LRU cache
+│   └── LRUCache/     LRU eviction with dirty-page tracking
 ├── Indexing/       B+ tree index on first INT column
-├── Catalog/        Table schema registry (persisted to catalog.dat)
+├── Catalog/        Table schema + tableId registry (persisted to .cat file)
 ├── WALManager/     Write-ahead log — fsync on commit for crash safety
 ├── Networking/     ASIO TCP server with challenge-response auth
 ├── GUI/            Raylib interactive interface
@@ -250,7 +286,9 @@ NexDB/
 
 ### Storage
 
-Data is stored in fixed-size pages (4096 bytes). Each page has a header tracking free space and row count. Rows are serialized as pipe-delimited strings. The LRU cache holds up to `cache_capacity` pages in memory (configurable); dirty pages are flushed to disk on eviction.
+Data is stored in fixed-size pages (4096 bytes). Each page header contains a `tableId` field — all tables for a given database share a single `.db` file, with pages tagged by owner. A `StorageFile` class manages the shared file: it allocates pages from a free list (pages with `tableId == 0`), rebuilt by scanning headers on startup.
+
+The LRU cache holds up to `cache_capacity` pages in memory (configurable); dirty pages are flushed to disk on eviction. Each table's `PageManager` tracks its own set of global page IDs.
 
 ### WAL & Durability
 

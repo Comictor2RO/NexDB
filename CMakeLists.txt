@@ -111,6 +111,10 @@ add_executable(NexDB
         AST/DropStatement/DropStatement.hpp
         AST/UpdateStatement/UpdateStatement.cpp
         AST/UpdateStatement/UpdateStatement.hpp
+        AST/CreateDatabaseStatement/CreateDatabaseStatement.cpp
+        AST/CreateDatabaseStatement/CreateDatabaseStatement.hpp
+        AST/UseDatabaseStatement/UseDatabaseStatement.cpp
+        AST/UseDatabaseStatement/UseDatabaseStatement.hpp
         GUI/Colors.hpp
         Networking/NetworkServer.cpp
         Networking/NetworkServer.hpp

@@ -28,6 +28,8 @@ add_executable(tests test_lexer.cpp
         ../AST/UpdateStatement/UpdateStatement.cpp
         ../AST/InsertStatement/InsertStatement.cpp
         ../AST/DropStatement/DropStatement.cpp
+        ../AST/CreateDatabaseStatement/CreateDatabaseStatement.cpp
+        ../AST/UseDatabaseStatement/UseDatabaseStatement.cpp
         ../AST/Columns/Columns.hpp
         ../Catalog/Catalog.cpp
         ../WALManager/WALManager.cpp

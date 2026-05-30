@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "../WALManager/WALManager.hpp"
 #include "../Engine/Engine.hpp"
-#include "../Catalog/Catalog.hpp"
 #include <fstream>
 #include <cstdio>
 
@@ -73,20 +72,22 @@ TEST_F(WALManagerTest, RecoverReplaysUncommitted) {
     const std::string dbFile  = "test_wal4.db";
     std::remove(catFile.c_str());
     std::remove(dbFile.c_str());
+    std::remove(testWalFile.c_str());
 
-    // Write an uncommitted INSERT into the WAL
+    // Create table schema using a setup engine
+    {
+        Engine setup(128, dbFile, catFile, testWalFile);
+        setup.query("CREATE TABLE users (id INT, name STRING, age INT)");
+    }
+    // Remove WAL written by setup, then write an uncommitted INSERT
+    std::remove(testWalFile.c_str());
     {
         WALManager wal(testWalFile);
         wal.logInsert("users", "1|Alice|25");
     }
 
-    // Set up catalog with the table schema
-    Catalog catalog(catFile);
-    std::vector<Columns> cols = {{"id", "INT"}, {"name", "TEXT"}, {"age", "INT"}};
-    catalog.createTable("users", cols);
-
     // Engine constructor calls recover() — replays the uncommitted INSERT
-    Engine engine(catalog, 128, dbFile, testWalFile);
+    Engine engine(128, dbFile, catFile, testWalFile);
 
     auto results = engine.query("SELECT * FROM users");
     ASSERT_EQ(results.size(), 1);
@@ -157,13 +158,10 @@ protected:
 
 //Test 8: crash during DELETE — recovery re-applies DELETE, row is gone
 TEST_F(WALRecoveryTest, RecoverReplaysUncommittedDelete) {
-    std::vector<Columns> cols = {{"id", "INT"}, {"name", "STRING"}};
-
-    // Setup: insert a row via Engine
+    // Setup: create table and insert a row via Engine
     {
-        Catalog catalog(catFile);
-        catalog.createTable("wal_del", cols);
-        Engine engine(catalog, 128, dbFile, walFile);
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_del (id INT, name STRING)");
         engine.query("INSERT INTO wal_del VALUES (1, Alice)");
     }
     std::remove(walFile.c_str());
@@ -179,21 +177,17 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedDelete) {
     }
 
     // Recovery: Engine constructor calls recover()
-    Catalog catalog(catFile);
-    Engine engine(catalog, 128, dbFile, walFile);
+    Engine engine(128, dbFile, catFile, walFile);
     auto results = engine.query("SELECT * FROM wal_del");
     EXPECT_EQ(results.size(), 0);
 }
 
 //Test 9: crash during UPDATE — recovery re-applies UPDATE, value is changed
 TEST_F(WALRecoveryTest, RecoverReplaysUncommittedUpdate) {
-    std::vector<Columns> cols = {{"id", "INT"}, {"name", "STRING"}};
-
-    // Setup: insert a row via Engine
+    // Setup: create table and insert a row via Engine
     {
-        Catalog catalog(catFile);
-        catalog.createTable("wal_upd", cols);
-        Engine engine(catalog, 128, dbFile, walFile);
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_upd (id INT, name STRING)");
         engine.query("INSERT INTO wal_upd VALUES (1, Alice)");
     }
     std::remove(walFile.c_str());
@@ -210,8 +204,7 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedUpdate) {
     }
 
     // Recovery
-    Catalog catalog(catFile);
-    Engine engine(catalog, 128, dbFile, walFile);
+    Engine engine(128, dbFile, catFile, walFile);
     auto results = engine.query("SELECT * FROM wal_upd");
     ASSERT_EQ(results.size(), 1);
     EXPECT_EQ(results[0].values[1], "Bob");

@@ -10,6 +10,8 @@ enum class TokenType{
     OPERATOR,
     PUNCTUATION,
     WILDCARD,
+    DATABASE,
+    USE,
     END_OF_FILE
 };
 

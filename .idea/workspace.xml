@@ -37,32 +37,20 @@
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Catalog/Catalog.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Catalog/Catalog.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Catalog/Catalog.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Catalog/Catalog.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/Config.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Config/Config.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Config/Config.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Config/Config.hpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Engine/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Engine/Engine.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend/Lexer/Lexer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Lexer/Lexer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend/Lexer/TokenType.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Lexer/TokenType.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUI/GUI.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUI/GUI.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.hpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/LRUCache/LRUCache.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/LRUCache/LRUCache.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/LRUCache/LRUCache.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/LRUCache/LRUCache.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/Page/Page.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/Page/Page.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/Page/Page.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/Page/Page.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/PageHeader/PageHeader.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/PageHeader/PageHeader.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/PageManager/PageManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/PageManager/PageManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Storage/PageManager/PageManager.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/PageManager/PageManager.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Table/Table.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Table/Table.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Table/Table.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Table/Table.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.json" beforeDir="false" afterPath="$PROJECT_DIR$/config.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/main.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/tests/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_cache.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_cache.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_catalog.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_catalog.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_engine.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_network.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_network.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_pagemanager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_pagemanager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_table.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_table.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_wal.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_wal.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -90,23 +78,23 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.002539622115354" />
-      <entry key="MS500" value="1.9807127982692188" />
-      <entry key="S2" value="7.609795564492779" />
-      <entry key="S5" value="16.829237215553015" />
-      <entry key="S10" value="25.64036211352821" />
-      <entry key="S30" value="35.98205893981339" />
-      <entry key="S60" value="42.280056633364985" />
-      <entry key="M2" value="58.11039539296051" />
-      <entry key="M5" value="107.60915263511748" />
-      <entry key="M10" value="187.47520131303423" />
-      <entry key="M15" value="266.2559294341408" />
-      <entry key="M30" value="439.66884600945247" />
-      <entry key="H1" value="603.7728330940785" />
-      <entry key="H2" value="719.8239438215172" />
-      <entry key="H4" value="789.3328789026482" />
-      <entry key="D1" value="854.1979701897568" />
-      <entry key="W1" value="866.0105941458521" />
+      <entry key="MS100" value="1.334052531874946" />
+      <entry key="MS500" value="3.900938945649133" />
+      <entry key="S2" value="12.352264844525134" />
+      <entry key="S5" value="26.237066687439746" />
+      <entry key="S10" value="44.8108210671908" />
+      <entry key="S30" value="91.67431844272285" />
+      <entry key="S60" value="123.50749951613794" />
+      <entry key="M2" value="158.36861315019428" />
+      <entry key="M5" value="246.37740698965862" />
+      <entry key="M10" value="390.04398725720745" />
+      <entry key="M15" value="515.3091909424028" />
+      <entry key="M30" value="795.5415886712485" />
+      <entry key="H1" value="1094.9810284377904" />
+      <entry key="H2" value="1331.4557002895092" />
+      <entry key="H4" value="1483.179606811873" />
+      <entry key="D1" value="1631.5786460251948" />
+      <entry key="W1" value="1659.3085962425384" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -128,23 +116,23 @@
       <entry key="W1" value="0.0" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.981873753512389" />
-      <entry key="MS500" value="1.9703625601792434" />
-      <entry key="S2" value="7.599188535521964" />
-      <entry key="S5" value="16.819889625326983" />
-      <entry key="S10" value="25.63320709106374" />
-      <entry key="S30" value="35.97868966079156" />
-      <entry key="S60" value="42.27807169701606" />
-      <entry key="M2" value="58.10902928929456" />
-      <entry key="M5" value="107.60812867596454" />
-      <entry key="M10" value="187.47426345292797" />
-      <entry key="M15" value="266.2550020622329" />
-      <entry key="M30" value="439.668029900959" />
-      <entry key="H1" value="603.7722496997087" />
-      <entry key="H2" value="719.8235881534263" />
-      <entry key="H4" value="789.3326815682894" />
-      <entry key="D1" value="854.1979342320986" />
-      <entry key="W1" value="866.0105889287009" />
+      <entry key="MS100" value="1.29775226903231" />
+      <entry key="MS500" value="3.8808687368817294" />
+      <entry key="S2" value="12.33614171248056" />
+      <entry key="S5" value="26.222925217220673" />
+      <entry key="S10" value="44.79863313194943" />
+      <entry key="S30" value="91.66605298164487" />
+      <entry key="S60" value="123.50182857734337" />
+      <entry key="M2" value="158.36235745038766" />
+      <entry key="M5" value="246.36442288114088" />
+      <entry key="M10" value="390.03055746627757" />
+      <entry key="M15" value="515.2975366518176" />
+      <entry key="M30" value="795.5337798769824" />
+      <entry key="H1" value="1094.9763886711494" />
+      <entry key="H2" value="1331.45313887429" />
+      <entry key="H4" value="1483.1782549698944" />
+      <entry key="D1" value="1631.5784096757782" />
+      <entry key="W1" value="1659.3085621906462" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -267,7 +255,7 @@
       <workItem from="1778677410905" duration="10155000" />
       <workItem from="1778770512779" duration="218000" />
       <workItem from="1780140674884" duration="262000" />
-      <workItem from="1780141233846" duration="4594000" />
+      <workItem from="1780141233846" duration="7203000" />
     </task>
     <servers />
   </component>

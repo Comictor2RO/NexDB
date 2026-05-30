@@ -33,7 +33,8 @@ Token Lexer::readWord()
         || uppercaseWord == "FROM" || uppercaseWord == "WHERE" || uppercaseWord == "INTO"
         || uppercaseWord == "VALUES" || uppercaseWord == "CREATE" || uppercaseWord == "TABLE"
         || uppercaseWord == "INT" || uppercaseWord == "STRING" || uppercaseWord == "DROP"
-        || uppercaseWord == "UPDATE" || uppercaseWord == "SET")
+        || uppercaseWord == "UPDATE" || uppercaseWord == "SET" || uppercaseWord == "USE"
+        || uppercaseWord == "DATABASE")
     {
         return {TokenType::KEYWORD, uppercaseWord};
     }

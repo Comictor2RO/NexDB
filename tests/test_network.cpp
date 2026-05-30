@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include "../Engine/Engine.hpp"
-#include "../Catalog/Catalog.hpp"
 #include "../Networking/NetworkServer.hpp"
 #include "../Networking/picosha2.h"
 #include <thread>
@@ -10,15 +9,13 @@
 
 class NetworkServerTest : public ::testing::Test {
 protected:
-    Catalog *catalog = nullptr;
     Engine *engine = nullptr;
     NetworkServer *server = nullptr;
     std::thread serverThread;
 
     void SetUp() override {
         cleanup();
-        catalog = new Catalog("test_network.cat");
-        engine = new Engine(*catalog, 128, "test_network.db", "test_network.wal");
+        engine = new Engine(128, "test_network.db", "test_network.cat", "test_network.wal");
         engine->query("CREATE TABLE net_users (id INT, name STRING)");
         engine->query("INSERT INTO net_users VALUES (1, Alice)");
         engine->query("INSERT INTO net_users VALUES (2, Bob)");
@@ -34,7 +31,6 @@ protected:
         serverThread.join();
         delete server;
         delete engine;
-        delete catalog;
         cleanup();
     }
 
@@ -185,8 +181,7 @@ TEST_F(NetworkServerTest, AutoPortDetectionPicksDifferentPort) {
     EXPECT_GE(firstPort, 3000u);
     EXPECT_LE(firstPort, 8000u);
 
-    Catalog catalog2("test_network2.cat");
-    Engine engine2(catalog2, 128, "test_network2.db", "test_network2.wal");
+    Engine engine2(128, "test_network2.db", "test_network2.cat", "test_network2.wal");
     NetworkServer server2(engine2, 0, 3, 30, false);
     server2.prepare();
     std::thread t([&]() { server2.run(); });
