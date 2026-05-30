@@ -61,6 +61,20 @@ USE myproject
 ### Localhost bypass
 Connections from `127.0.0.1` or `::1` skip the challenge-response handshake and receive `AUTH OK` immediately. This makes local tooling (Python scripts, GUI) simpler. Remote connections still require full authentication.
 
+### FLOAT and BOOL column types
+Two new column types are now supported in addition to `INT` and `STRING`:
+
+- `FLOAT` — stores decimal numbers (e.g. `3.14`, `-0.5`)
+- `BOOL` — stores boolean values: `true`, `false`, `1`, `0`, `TRUE`, `FALSE`
+
+NULL values (`NULL`) can be inserted into any column regardless of type.
+
+### Concurrent connections
+The TCP server now runs an ASIO I/O thread pool. The number of threads is set via `thread_count` in `config.json` (default 4). Multiple clients can be handled simultaneously; engine access is serialized internally via a mutex.
+
+### Atomic DELETE and UPDATE (WAL)
+DELETE and UPDATE operations are now fully atomic. The WAL logs the complete post-operation state before modifying storage using a `REPLACE_BEGIN` / `REPLACE_ROW` pattern. On crash recovery, the engine can always restore the correct final state without data loss or partial writes. WAL values are percent-encoded to safely handle any delimiter characters inside stored data.
+
 ---
 
 ## Configuration
@@ -74,6 +88,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
   "cache_capacity": 128,
   "aux_max_failures": 3,
   "aux_timeout": 30,
+  "thread_count": 4,
   "database": "mydb"
 }
 ```
@@ -85,6 +100,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
 | `cache_capacity` | `128` | Number of pages held in LRU cache |
 | `aux_max_failures` | `3` | Failed auth attempts before IP ban |
 | `aux_timeout` | `30` | Ban duration in seconds |
+| `thread_count` | `4` | Number of threads in the ASIO I/O thread pool |
 | `database` | `"mydb"` | Active database name (files stored in `databases/`) |
 
 ---
@@ -201,9 +217,9 @@ string secret = File.ReadAllText("server_auth.conf").Trim();
 
 using var db = new NexDBClient("127.0.0.1", 3000, secret);
 
-db.Query("CREATE TABLE users (id INT, name STRING, age INT)");
-db.Query("INSERT INTO users VALUES (1, Alice, 30)");
-db.Query("INSERT INTO users VALUES (2, Bob, 25)");
+db.Query("CREATE TABLE users (id INT, name STRING, age INT, score FLOAT, active BOOL)");
+db.Query("INSERT INTO users VALUES (1, Alice, 30, 9.5, true)");
+db.Query("INSERT INTO users VALUES (2, Bob, 25, 7.2, false)");
 
 var rows = db.Query("SELECT * FROM users WHERE age > 20");
 foreach (var row in rows)
@@ -224,18 +240,21 @@ USE DATABASE myproject
 USE myproject
 
 -- Table management
-CREATE TABLE products (id INT, name STRING, price INT)
+CREATE TABLE products (id INT, name STRING, price FLOAT, active BOOL)
 DROP TABLE products
 
 -- Data manipulation
-INSERT INTO products VALUES (1, Widget, 99)
+INSERT INTO products VALUES (1, Widget, 9.99, true)
+INSERT INTO products VALUES (2, 'Out of stock', NULL, false)
 SELECT * FROM products
-SELECT name, price FROM products WHERE price > 50
-UPDATE products SET price = 79 WHERE id = 1
-DELETE FROM products WHERE id = 1
+SELECT name, price FROM products WHERE price > 5.0
+UPDATE products SET price = 7.99 WHERE id = 1
+DELETE FROM products WHERE id = 2
 ```
 
-Supported types: `INT`, `STRING`
+Supported column types: `INT`, `STRING`, `FLOAT`, `BOOL`
+
+Any column can store `NULL` as a value regardless of its declared type.
 
 Supported operators in WHERE: `=`, `!=`, `<`, `>`, `<=`, `>=`
 
@@ -298,7 +317,7 @@ NexDB/
 
 ### Thread safety
 
-`PageManager` uses a `std::shared_mutex` for the LRU cache (multiple concurrent readers, exclusive writes) and separate `std::mutex` instances for file I/O and insert serialization. `NetworkServer` protects the engine with a `std::mutex` and the rate-limit map with its own `std::mutex`.
+`PageManager` uses a `std::shared_mutex` for the LRU cache (multiple concurrent readers, exclusive writes) and separate `std::mutex` instances for file I/O and insert serialization. `NetworkServer` runs an ASIO I/O thread pool (`thread_count` threads) and protects the engine with a single `std::mutex` to serialize query execution. The rate-limit map has its own `std::mutex`.
 
 ### Storage
 
@@ -309,5 +328,7 @@ The LRU cache holds up to `cache_capacity` pages in memory (configurable); dirty
 ### WAL & Durability
 
 All mutating operations (INSERT, UPDATE, DELETE) are logged to `engine.wal` before execution. On commit, the log entry is marked committed and `FlushFileBuffers` (Windows) / `fsync` (Linux) is called to guarantee the log is on physical disk before returning. On startup, uncommitted entries are replayed automatically.
+
+DELETE and UPDATE use a `REPLACE_BEGIN` / `REPLACE_ROW` pattern: the complete post-operation row set is written to the WAL before any storage is modified. This makes both operations fully atomic — a crash at any point leaves the engine able to recover the correct final state. WAL field values are percent-encoded so delimiter characters (`|`, `~`, `%`) inside stored data never corrupt the log format.
 
 ---
