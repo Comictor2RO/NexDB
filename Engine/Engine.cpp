@@ -85,14 +85,8 @@ void Engine::executeInsert(const InsertStatement &stmt)
     Row row;
     row.values = stmt.getValues();
 
-    std::string rowData;
-    for (int i = 0; i < (int)row.values.size(); i++)
-    {
-        if (i > 0) rowData += "|";
-        rowData += row.values[i];
-    }
-
-    wal->logInsert(stmt.getTable(), rowData);
+    if (!inRecovery)
+        wal->logInsert(stmt.getTable(), row.values);
 
     auto result = table.insertRow(row);
     if (!result)
@@ -119,7 +113,8 @@ void Engine::executeInsert(const InsertStatement &stmt)
         throw std::runtime_error(errorMsg);
     }
 
-    wal->commit();
+    if (!inRecovery)
+        wal->commit();
 }
 
 std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
@@ -160,20 +155,44 @@ std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
 
 void Engine::executeDelete(const DeleteStatement &stmt)
 {
-    wal->logDelete(stmt.getTable(), stmt.getCondition());
     std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
+
+    if (!inRecovery)
+    {
+        // Log the full new state before touching storage — guarantees recovery
+        std::vector<Row> toKeep = table.previewDelete(stmt.getCondition());
+        wal->logReplaceBegin(stmt.getTable(), stmt.getCondition());
+        for (const auto &row : toKeep)
+            wal->logReplaceRow(stmt.getTable(), row.values);
+    }
+
     table.deleteRow(stmt.getCondition());
-    wal->commit();
+
+    if (!inRecovery)
+        wal->commit();
 }
 
 void Engine::executeUpdate(const UpdateStatement &stmt)
 {
-    wal->logUpdate(stmt.getTable(), stmt.getCondition(), stmt.getAssignments());
     std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
+
+    if (!inRecovery)
+    {
+        std::vector<Row> newState = table.previewUpdate(stmt.getCondition(), stmt.getAssignments());
+        if (!newState.empty())
+        {
+            wal->logReplaceBegin(stmt.getTable(), stmt.getCondition());
+            for (const auto &row : newState)
+                wal->logReplaceRow(stmt.getTable(), row.values);
+        }
+    }
+
     table.updateRow(stmt.getCondition(), stmt.getAssignments());
-    wal->commit();
+
+    if (!inRecovery)
+        wal->commit();
 }
 
 std::string Engine::consumePendingSwitch()

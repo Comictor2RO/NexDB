@@ -9,8 +9,8 @@
 #include <sstream>
 #include <iomanip>
 
-NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds, bool bypassLocalhost)
-    : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds), bypassLocalhost(bypassLocalhost)
+NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds, bool bypassLocalhost, int numThreads)
+    : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds), bypassLocalhost(bypassLocalhost), numThreads(numThreads)
 {};
 
 void NetworkServer::prepare()
@@ -128,7 +128,15 @@ bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clie
 
 void NetworkServer::run()
 {
+    std::vector<std::thread> pool;
+    for (int i = 1; i < numThreads; i++)
+        pool.emplace_back([this]() {
+            io_context.run();
+        });
+
     io_context.run();
+    for (auto &t : pool)
+        t.join();
 }
 
 size_t NetworkServer::getPort() const

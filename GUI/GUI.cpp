@@ -3,7 +3,7 @@
 #include <algorithm>
 
 GUI::GUI(Engine &engine, const Config &config)
-    : engine(engine), server(engine, config.port, config.aux_max_failures, config.aux_timeout), serverRunning(false), isDark(true), cursorPos(0), backspaceRepeatTimer(0)
+    : engine(engine), server(engine, config.port, config.aux_max_failures, config.aux_timeout, config.thread_count), serverRunning(false), isDark(true), cursorPos(0), backspaceRepeatTimer(0)
 {}
 
 void GUI::run()

@@ -29,6 +29,11 @@ class Table {
         void dropStorage();
         void updateRow(Condition *cond, const std::vector<std::pair<std::string,std::string>> &assignemets);
 
+        // Returns the rows that would remain after the operation, without touching storage.
+        // For previewUpdate: returns empty if validation fails or no rows match.
+        std::vector<Row> previewDelete(Condition *cond);
+        std::vector<Row> previewUpdate(Condition *cond, const std::vector<std::pair<std::string,std::string>> &assignments);
+
     private:
         std::string name;
         std::vector<Columns> scheme;

@@ -19,10 +19,12 @@ class WALManager {
 public:
     WALManager(std::string filename);
 
-    void logInsert(const std::string &table, const std::string &rowData);
+    void logInsert(const std::string &table, const std::vector<std::string> &values);
     void logDelete(const std::string &table, const Condition *condition);
     void logUpdate(const std::string &table, const Condition *condition,
                    const std::vector<std::pair<std::string, std::string>> &assignments);
+    void logReplaceBegin(const std::string &table, const Condition *condition);
+    void logReplaceRow(const std::string &table, const std::vector<std::string> &values);
     void commit();
     void recover(Engine &engine);
 

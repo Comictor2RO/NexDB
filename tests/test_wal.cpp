@@ -33,7 +33,7 @@ protected:
 //Test 1: logInsert writes a correctly formatted uncommitted entry to the WAL file
 TEST_F(WALManagerTest, LogInsertCreatesEntry) {
     WALManager wal(testWalFile);
-    wal.logInsert("users", "1|Alice|25");
+    wal.logInsert("users", {"1", "Alice", "25"});
 
     auto lines = readWalLines();
     ASSERT_EQ(lines.size(), 1);
@@ -43,7 +43,7 @@ TEST_F(WALManagerTest, LogInsertCreatesEntry) {
 //Test 2: commit appends COMMIT marker after entry
 TEST_F(WALManagerTest, CommitUpdatesEntry) {
     WALManager wal(testWalFile);
-    wal.logInsert("users", "1|Alice|25");
+    wal.logInsert("users", {"1", "Alice", "25"});
     wal.commit();
 
     auto lines = readWalLines();
@@ -55,8 +55,8 @@ TEST_F(WALManagerTest, CommitUpdatesEntry) {
 //Test 3: multiple inserts followed by commit appends COMMIT marker
 TEST_F(WALManagerTest, MultipleInsertsAndCommit) {
     WALManager wal(testWalFile);
-    wal.logInsert("users", "1|Alice|25");
-    wal.logInsert("users", "2|Bob|30");
+    wal.logInsert("users", {"1", "Alice", "25"});
+    wal.logInsert("users", {"2", "Bob", "30"});
     wal.commit();
 
     auto lines = readWalLines();
@@ -83,7 +83,7 @@ TEST_F(WALManagerTest, RecoverReplaysUncommitted) {
     std::remove(testWalFile.c_str());
     {
         WALManager wal(testWalFile);
-        wal.logInsert("users", "1|Alice|25");
+        wal.logInsert("users", {"1", "Alice", "25"});
     }
 
     // Engine constructor calls recover() — replays the uncommitted INSERT

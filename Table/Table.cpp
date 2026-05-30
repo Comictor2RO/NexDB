@@ -182,57 +182,28 @@ std::vector<Row> Table::selectRow(Condition *cond)
     return result;
 }
 
-void Table::deleteRow(Condition *cond)
+std::vector<Row> Table::previewDelete(Condition *cond)
 {
+    if (cond == nullptr)
+        return {}; // delete all → keep none
+
     std::vector<Row> allRows = selectRow(nullptr);
     std::vector<Row> toKeep;
-
     for (const auto &row : allRows)
-    {
-        if (cond == nullptr)
-        {
-            // delete all rows -> keep none
-            continue;
-        }
-
         if (!evaluateCondition(cond, row, scheme))
             toKeep.push_back(row);
-    }
-
-    pageManager.clearAll();
-
-    index.clear();
-    nextKey = 0;
-
-    for (const auto &row : toKeep)
-    {
-        auto result = insertRow(row);
-        if (!result)
-        {
-            // Log error but continue with other rows
-            // In production, consider rolling back or aggregating errors
-        }
-    }
+    return toKeep;
 }
 
-void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, std::string>> &assignmets)
+std::vector<Row> Table::previewUpdate(Condition *cond,
+    const std::vector<std::pair<std::string, std::string>> &assignments)
 {
-    auto validateAssignments = [this](const std::vector<std::pair<std::string, std::string>> &assignments) -> bool
+    for (const auto &a : assignments)
     {
-        for (const auto &assignment : assignments)
-        {
-            int colIndex = getColumnIndex(assignment.first);
-            if (colIndex == -1)
-                return false;
-
-            if (!validateValueForType(assignment.second, scheme[colIndex].type))
-                return false;
-        }
-        return true;
-    };
-
-    if (!validateAssignments(assignmets))
-        return;
+        int colIndex = getColumnIndex(a.first);
+        if (colIndex == -1) return {};
+        if (!validateValueForType(a.second, scheme[colIndex].type)) return {};
+    }
 
     std::vector<Row> allRows = selectRow(nullptr);
     bool updatedAny = false;
@@ -242,37 +213,44 @@ void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, 
         if (cond != nullptr && !evaluateCondition(cond, row, scheme))
             continue;
 
-        for (const auto &assignment : assignmets)
+        for (const auto &a : assignments)
         {
-            int colIndex = getColumnIndex(assignment.first);
-            if (colIndex == -1)
-                return;
-
-            if (colIndex >= static_cast<int>(row.values.size()))
-                return;
-
-            row.values[colIndex] = assignment.second;
+            int colIndex = getColumnIndex(a.first);
+            if (colIndex < 0 || colIndex >= static_cast<int>(row.values.size()))
+                return {};
+            row.values[colIndex] = a.second;
         }
-
         updatedAny = true;
     }
 
-    if (!updatedAny)
+    if (!updatedAny) return {};
+    return allRows;
+}
+
+void Table::deleteRow(Condition *cond)
+{
+    std::vector<Row> toKeep = previewDelete(cond);
+
+    pageManager.clearAll();
+    index.clear();
+    nextKey = 0;
+
+    for (const auto &row : toKeep)
+        insertRow(row);
+}
+
+void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, std::string>> &assignmets)
+{
+    std::vector<Row> newState = previewUpdate(cond, assignmets);
+    if (newState.empty())
         return;
 
     pageManager.clearAll();
     index.clear();
     nextKey = 0;
 
-    for (const auto &row : allRows)
-    {
-        auto result = insertRow(row);
-        if (!result)
-        {
-            // Log error but continue with other rows
-            // In production, consider rolling back or aggregating errors
-        }
-    }
+    for (const auto &row : newState)
+        insertRow(row);
 }
 
 void Table::dropStorage()

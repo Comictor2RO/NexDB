@@ -49,6 +49,8 @@ Config Config::load(const std::string &path)
             config.aux_max_failures = n;
         else if (key == "aux_timeout")
             config.aux_timeout = n;
+        else if (key == "thread_count")
+            config.thread_count = n;
     }
 
     return config;

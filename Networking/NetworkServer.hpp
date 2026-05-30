@@ -34,7 +34,7 @@ struct RateLimitEntry {
 
 class NetworkServer {
     public:
-        NetworkServer(Engine &engine, int port = 0, int maxFailures = 3, int banSeconds = 30, bool bypassLocalhost = true);
+        NetworkServer(Engine &engine, int port = 0, int maxFailures = 3, int banSeconds = 30, bool bypassLocalhost = true, int numThreads = 4);
 
         void prepare();
         void run();
@@ -54,6 +54,7 @@ class NetworkServer {
         Engine &engine;
         std::mutex engineMutex;
         std::function<void(const std::string&)> logCallback;
+        int numThreads;
 
         std::string authSecret;
         std::map<std::string, RateLimitEntry> rateLimitMap;

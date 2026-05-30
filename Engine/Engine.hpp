@@ -31,7 +31,11 @@ class Engine {
         // Returns pending database switch name (empty if none), then clears it
         std::string consumePendingSwitch();
 
+        // Suppress WAL logging during crash recovery replays
+        void setRecoveryMode(bool mode) { inRecovery = mode; }
+
     private:
+        bool inRecovery = false;
         std::unique_ptr<Catalog>     catalog;
         std::unique_ptr<StorageFile> storage;
         std::unique_ptr<WALManager>  wal;

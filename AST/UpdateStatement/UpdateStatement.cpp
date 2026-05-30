@@ -46,4 +46,6 @@ void UpdateStatement::setCondition(Condition *condition)
 }
 
 UpdateStatement::~UpdateStatement()
-{}
+{
+    delete condition;
+}
