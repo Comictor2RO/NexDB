@@ -9,8 +9,8 @@
 #include <sstream>
 #include <iomanip>
 
-NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds)
-    : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds)
+NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds, bool bypassLocalhost)
+    : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds), bypassLocalhost(bypassLocalhost)
 {};
 
 void NetworkServer::prepare()
@@ -193,7 +193,10 @@ void NetworkServer::acceptConnections()
     acceptor.async_accept(io_context, [this](asio::error_code ec, tcp::socket socket) {
         if (!ec) {
             std::string clientIp = socket.remote_endpoint().address().to_string();
-            if (handleHandshake(socket, clientIp))
+            bool authed = (bypassLocalhost && (clientIp == "127.0.0.1" || clientIp == "::1"))
+                          ? (asio::write(socket, asio::buffer(std::string("AUTH OK\n"))), true)
+                          : handleHandshake(socket, clientIp);
+            if (authed)
             {
                 if (logCallback) logCallback("[SERVER] Client authenticated: " + clientIp);
                 handleClient((std::make_shared<tcp::socket>(std::move(socket))));

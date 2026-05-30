@@ -4,10 +4,20 @@
 #include <fstream>
 #include <thread>
 #include <atomic>
+#include <cstdio>
+
+// All catalog tests use an isolated .cat file to avoid cross-test pollution
+class CatalogTest : public ::testing::Test {
+protected:
+    std::string catFile = "test_catalog_isolated.cat";
+
+    void SetUp() override { std::remove(catFile.c_str()); }
+    void TearDown() override { std::remove(catFile.c_str()); }
+};
 
 // Test 1: Create new table
-TEST(CatalogTest, CreateNewTable) {
-    Catalog catalog;
+TEST_F(CatalogTest, CreateNewTable) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
@@ -18,14 +28,14 @@ TEST(CatalogTest, CreateNewTable) {
 }
 
 // Test 2: Table does not exist
-TEST(CatalogTest, TableDoentExist) {
-    Catalog catalog;
+TEST_F(CatalogTest, TableDoentExist) {
+    Catalog catalog(catFile);
     EXPECT_FALSE(catalog.tableExists("non_existent_table"));
 }
 
 // Test 3: Get schema for existing table
-TEST(CatalogTest, GetSchemaForExistingTable) {
-    Catalog catalog;
+TEST_F(CatalogTest, GetSchemaForExistingTable) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
@@ -41,17 +51,17 @@ TEST(CatalogTest, GetSchemaForExistingTable) {
 }
 
 // Test 4: Get schema for non-existent table
-TEST(CatalogTest, GetSchemaNonExistent)
+TEST_F(CatalogTest, GetSchemaNonExistent)
 {
-    Catalog catalog;
+    Catalog catalog(catFile);
     auto retrieve = catalog.getColumns("non_existent_table");
 
     EXPECT_TRUE(retrieve.empty());
 }
 
 // Test 5: Drop existing table
-TEST(CatalogTest, DropExistingTable) {
-    Catalog catalog;
+TEST_F(CatalogTest, DropExistingTable) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {{"id", "INT"}};
 
     catalog.createTable("test_drop", schema);
@@ -62,14 +72,14 @@ TEST(CatalogTest, DropExistingTable) {
 }
 
 // Test 6: Drop non-Existing table
-TEST(CatalogTest, DropNonExistingTable) {
-    Catalog catalog;
+TEST_F(CatalogTest, DropNonExistingTable) {
+    Catalog catalog(catFile);
     EXPECT_NO_THROW(catalog.dropTable("non_existent_table"));
 }
 
 // Test 7: Create duplicate table
-TEST(CatalogTest, CreateDuplicateTable) {
-    Catalog catalog;
+TEST_F(CatalogTest, CreateDuplicateTable) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {{"id", "INT"}};
     std::vector<Columns> schema2 = {{"name", "STRING"}};
 
@@ -82,13 +92,9 @@ TEST(CatalogTest, CreateDuplicateTable) {
 }
 
 // Test 8: Catalog survives restart
-TEST(CatalogTest, SurviveTest) {
-    // Create the .db file so Catalog recognizes it at load()
-    std::ofstream dummy("test_survive.db");
-    dummy.close();
-
+TEST_F(CatalogTest, SurviveTest) {
     {
-        Catalog catalog;
+        Catalog catalog(catFile);
 
         std::vector<Columns> schema = {
             {"id", "INT"},
@@ -99,7 +105,7 @@ TEST(CatalogTest, SurviveTest) {
     }
 
     {
-        Catalog catalog2;
+        Catalog catalog2(catFile);
         EXPECT_TRUE(catalog2.tableExists("test_survive"));
 
         auto retrieve = catalog2.getColumns("test_survive");
@@ -109,14 +115,11 @@ TEST(CatalogTest, SurviveTest) {
         EXPECT_EQ(retrieve[0].type, "INT");
         EXPECT_EQ(retrieve[1].type, "STRING");
     }
-
-    // Cleanup
-    std::filesystem::remove("test_survive.db");
 }
 
 // Test 9: Multiple Tables in catalog
-TEST(CatalogTest, MultipleTables) {
-    Catalog catalog;
+TEST_F(CatalogTest, MultipleTables) {
+    Catalog catalog(catFile);
 
     catalog.createTable("users", {{"id", "INT"}});
     catalog.createTable("products", {{"name", "STRING"}});
@@ -128,8 +131,8 @@ TEST(CatalogTest, MultipleTables) {
 }
 
 // Test 10: Empty Schema
-TEST(CatalogTest, EmptySchema) {
-    Catalog catalog;
+TEST_F(CatalogTest, EmptySchema) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {};
     catalog.createTable("empty_schema", schema);
 
@@ -137,8 +140,8 @@ TEST(CatalogTest, EmptySchema) {
 }
 
 // Test 11: concurrent createTable — only one thread succeeds, schema is not corrupted
-TEST(CatalogTest, ConcurrentCreateSameTable) {
-    Catalog catalog;
+TEST_F(CatalogTest, ConcurrentCreateSameTable) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
     const int THREADS = 10;
 
@@ -153,8 +156,8 @@ TEST(CatalogTest, ConcurrentCreateSameTable) {
 }
 
 // Test 12: concurrent reads — tableExists and getColumns do not block each other
-TEST(CatalogTest, ConcurrentReadsDoNotBlock) {
-    Catalog catalog;
+TEST_F(CatalogTest, ConcurrentReadsDoNotBlock) {
+    Catalog catalog(catFile);
     catalog.createTable("read_table", {{"id", "INT"}});
 
     const int THREADS = 20;
@@ -176,8 +179,8 @@ TEST(CatalogTest, ConcurrentReadsDoNotBlock) {
 }
 
 // Test 13: concurrent createTable and dropTable — no crash or corrupted data
-TEST(CatalogTest, ConcurrentCreateAndDrop) {
-    Catalog catalog;
+TEST_F(CatalogTest, ConcurrentCreateAndDrop) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {{"id", "INT"}};
 
     std::vector<std::thread> threads;
@@ -196,9 +199,9 @@ TEST(CatalogTest, ConcurrentCreateAndDrop) {
         EXPECT_TRUE(cols.empty());
 }
 
-// Test 14: getColumns concurent cu createTable — nu returneaza stare partiala
-TEST(CatalogTest, ConcurrentWriteAndRead) {
-    Catalog catalog;
+// Test 14: concurrent write and read — no partial state returned
+TEST_F(CatalogTest, ConcurrentWriteAndRead) {
+    Catalog catalog(catFile);
     std::vector<Columns> schema = {{"id", "INT"}, {"val", "STRING"}};
 
     std::atomic<int> corruptReads{0};

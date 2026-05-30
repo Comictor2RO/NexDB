@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "../Storage/PageManager/PageManager.hpp"
+#include "../Storage/StorageFile/StorageFile.hpp"
 #include <thread>
 #include <vector>
 #include <set>
@@ -15,7 +16,8 @@ protected:
 
 // Test 1: simple insert, read back
 TEST_F(PageManagerTest, InsertAndReadBack) {
-    PageManager pm(testFile);
+    StorageFile storage(testFile);
+    PageManager pm(storage, 1);
     pm.insertRow("hello");
     pm.insertRow("world");
 
@@ -27,7 +29,8 @@ TEST_F(PageManagerTest, InsertAndReadBack) {
 
 // Test 2: insertRowWithLocation returns correct position
 TEST_F(PageManagerTest, InsertWithLocationReturnsValidIds) {
-    PageManager pm(testFile);
+    StorageFile storage(testFile);
+    PageManager pm(storage, 1);
     auto r1 = pm.insertRowWithLocation("row1");
     auto r2 = pm.insertRowWithLocation("row2");
 
@@ -41,7 +44,8 @@ TEST_F(PageManagerTest, InsertWithLocationReturnsValidIds) {
 
 // Test 3: clearAll removes all rows
 TEST_F(PageManagerTest, ClearAllRemovesRows) {
-    PageManager pm(testFile);
+    StorageFile storage(testFile);
+    PageManager pm(storage, 1);
     pm.insertRow("a");
     pm.insertRow("b");
     pm.clearAll();
@@ -52,7 +56,8 @@ TEST_F(PageManagerTest, ClearAllRemovesRows) {
 
 // Test 4: concurrent insert — no lost rows and no duplicates
 TEST_F(PageManagerTest, ConcurrentInsertNoDuplicatesNoLoss) {
-    PageManager pm(testFile);
+    StorageFile storage(testFile);
+    PageManager pm(storage, 1);
     const int THREADS = 8;
     const int ROWS_PER_THREAD = 50;
 
@@ -76,7 +81,8 @@ TEST_F(PageManagerTest, ConcurrentInsertNoDuplicatesNoLoss) {
 
 // Test 5: concurrent insertRowWithLocation — each row occupies a unique position
 TEST_F(PageManagerTest, ConcurrentInsertUniqueLocations) {
-    PageManager pm(testFile);
+    StorageFile storage(testFile);
+    PageManager pm(storage, 1);
     const int THREADS = 4;
     const int ROWS_PER_THREAD = 25;
 

@@ -9,7 +9,7 @@
 
 class Catalog {
     public:
-        Catalog();
+        explicit Catalog(const std::string& catalogPath = "catalog.dat");
 
         //Methods
         void createTable(const std::string &name, const std::vector<Columns> &columns);
@@ -18,11 +18,14 @@ class Catalog {
 
         //Getter
         std::vector<Columns> getColumns(const std::string &name) const;
+        int getTableId(const std::string &name) const;
 
     private:
         mutable std::shared_mutex mutex;
         std::map<std::string, std::vector<Columns>> columns;
-        static const char* CATALOG_FILE;
+        std::map<std::string, int> tableIds;
+        int nextTableId = 1;
+        std::string catalogFile;
 
         void load();
         void save();

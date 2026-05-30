@@ -1,5 +1,5 @@
 #include "Table.hpp"
-
+#include "../Storage/StorageFile/StorageFile.hpp"
 #include <algorithm>
 
 int Table::getColumnIndex(const std::string &columnName) const
@@ -79,8 +79,9 @@ static bool evaluateCondition(const Condition *cond, const Row &row, const std::
     return false;
 }
 
-Table::Table(const std::string &name, const std::vector<Columns> &schema, int cacheCapacity)
-    : name(name), scheme(schema), pageManager(name + ".db", cacheCapacity), index(4), nextKey(0)
+Table::Table(const std::string &name, const std::vector<Columns> &schema,
+             StorageFile &storage, int tableId, int cacheCapacity)
+    : name(name), scheme(schema), pageManager(storage, tableId, cacheCapacity), index(4), nextKey(0)
 {
     rebuildIndex();
 }
@@ -284,12 +285,12 @@ void Table::dropStorage()
 void Table::rebuildIndex()
 {
     index.clear();
-    int totalPages = pageManager.getNumberOfPages();
+    std::vector<int> pageIds = pageManager.getPageIds();
     int globalRowCounter = 0;
 
-    for (int p = 0; p < totalPages; p++)
+    for (int gid : pageIds)
     {
-        Page page = pageManager.readPage(p);
+        Page page = pageManager.readPage(gid);
         std::vector<std::string> rows = page.getRows();
         for (int r = 0; r < (int)rows.size(); r++)
         {
@@ -300,7 +301,7 @@ void Table::rebuildIndex()
                 try
                 {
                     int key = std::stoi(row.values[0]);
-                    index.insert(key, p, r);
+                    index.insert(key, gid, r);
                 }
                 catch (...) {}
             }

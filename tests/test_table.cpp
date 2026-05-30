@@ -1,26 +1,49 @@
 #include <gtest/gtest.h>
 #include "../Table/Table.hpp"
+#include "../Storage/StorageFile/StorageFile.hpp"
+#include <cstdio>
 
-//Create Table with Schema
-TEST(TableTest, CreateTableWithValidSchema) {
+class TableTest : public ::testing::Test {
+protected:
+    std::string dbFile = "test_table.db";
+    StorageFile *storage = nullptr;
+    int nextTableId = 1;
+
+    void SetUp() override {
+        std::remove(dbFile.c_str());
+        storage = new StorageFile(dbFile);
+    }
+
+    void TearDown() override {
+        delete storage;
+        storage = nullptr;
+        std::remove(dbFile.c_str());
+    }
+
+    Table makeTable(const std::string &name, const std::vector<Columns> &schema) {
+        return Table(name, schema, *storage, nextTableId++);
+    }
+};
+
+//Test 1: Create Table with Schema
+TEST_F(TableTest, CreateTableWithValidSchema) {
     std::vector<Columns> schema = {
         {"id","INT"},
         {"name", "STRING"}
     };
 
-    Table table("test_users", schema);
-
+    Table table = makeTable("test_users", schema);
     SUCCEED();
 }
 
 //Test 2: Insert Valid Row
-TEST(TableTest, InsertValidRow) {
+TEST_F(TableTest, InsertValidRow) {
     std::vector<Columns> schema = {
-      {"id", "INT"},
+        {"id", "INT"},
         {"name", "STRING"}
     };
 
-    Table table("test_insert", schema);
+    Table table = makeTable("test_insert", schema);
 
     Row row;
     row.values = {"1", "John"};
@@ -30,12 +53,12 @@ TEST(TableTest, InsertValidRow) {
 }
 
 //Test 3: Insert Row with Schema Mismatch
-TEST(TableTest, InsertSchemaMismatch) {
+TEST_F(TableTest, InsertSchemaMismatch) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
     };
-    Table table("test_mismatch", schema);
+    Table table = makeTable("test_mismatch", schema);
 
     Row row;
     row.values = {"1"};
@@ -46,15 +69,12 @@ TEST(TableTest, InsertSchemaMismatch) {
 }
 
 //Test 4: Select All Rows
-TEST(TableTest, SelectAllRows) {
+TEST_F(TableTest, SelectAllRows) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
     };
-    Table table("test_select", schema);
-
-    // Clean up any existing data
-    table.dropStorage();
+    Table table = makeTable("test_select", schema);
 
     table.insertRow({{"1", "John"}});
     table.insertRow({{"2", "Jane"}});
@@ -64,15 +84,12 @@ TEST(TableTest, SelectAllRows) {
 }
 
 //Test 5: Select with CONDITION
-TEST(TableTest, SelectWithCondition) {
+TEST_F(TableTest, SelectWithCondition) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
     };
-    Table table("test_condition", schema);
-
-    // Clean up any existing data
-    table.dropStorage();
+    Table table = makeTable("test_condition", schema);
 
     table.insertRow({{"1", "John"}});
     table.insertRow({{"2", "Jane"}});
@@ -85,13 +102,12 @@ TEST(TableTest, SelectWithCondition) {
 }
 
 // Test 6: Insert with invalid type (non-INT for INT column)
-TEST(TableTest, InsertInvalidType) {
+TEST_F(TableTest, InsertInvalidType) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
     };
-    Table table("test_invalid_type", schema);
-    table.dropStorage();
+    Table table = makeTable("test_invalid_type", schema);
 
     Row row;
     row.values = {"abc", "John"}; // Invalid INT
@@ -102,13 +118,12 @@ TEST(TableTest, InsertInvalidType) {
 }
 
 // Test 7: Delete with condition
-TEST(TableTest, DeleteWithCondition) {
+TEST_F(TableTest, DeleteWithCondition) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
     };
-    Table table("test_delete", schema);
-    table.dropStorage();
+    Table table = makeTable("test_delete", schema);
 
     table.insertRow({{"1", "John"}});
     table.insertRow({{"2", "Jane"}});
@@ -124,13 +139,12 @@ TEST(TableTest, DeleteWithCondition) {
 }
 
 // Test 8: Delete all rows (no condition)
-TEST(TableTest, DeleteAllRows) {
+TEST_F(TableTest, DeleteAllRows) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
     };
-    Table table("test_delete_all", schema);
-    table.dropStorage();
+    Table table = makeTable("test_delete_all", schema);
 
     table.insertRow({{"1", "John"}});
     table.insertRow({{"2", "Jane"}});
@@ -142,13 +156,12 @@ TEST(TableTest, DeleteAllRows) {
 }
 
 // Test 9: Update with condition
-TEST(TableTest, UpdateWithCondition) {
+TEST_F(TableTest, UpdateWithCondition) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"name", "STRING"}
     };
-    Table table("test_update", schema);
-    table.dropStorage();
+    Table table = makeTable("test_update", schema);
 
     table.insertRow({{"1", "John"}});
     table.insertRow({{"2", "Jane"}});
@@ -163,13 +176,12 @@ TEST(TableTest, UpdateWithCondition) {
 }
 
 // Test 10: Select with different operators (>, <, >=, <=, !=)
-TEST(TableTest, SelectWithDifferentOperators) {
+TEST_F(TableTest, SelectWithDifferentOperators) {
     std::vector<Columns> schema = {
         {"id", "INT"},
         {"age", "INT"}
     };
-    Table table("test_operators", schema);
-    table.dropStorage();
+    Table table = makeTable("test_operators", schema);
 
     table.insertRow({{"1", "18"}});
     table.insertRow({{"2", "25"}});

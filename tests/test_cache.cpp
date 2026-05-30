@@ -24,11 +24,20 @@ class LRUCacheTest : public ::testing::Test {
             }
         std::filesystem::remove(testFile);
     }
+
+    LRUCache::FlushFn makeFlushFn() {
+        return [this](int pageId, const Page& p) {
+            file.clear();
+            file.seekp(pageId * PAGE_SIZE, std::ios::beg);
+            file.write(p.getBuffer(), PAGE_SIZE);
+            file.flush();
+        };
+    }
 };
 
 //Test 1: Get from empty cache
 TEST_F(LRUCacheTest, GetFromEmptyCache) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page *result = cache.get(1);
     EXPECT_EQ(result, nullptr);
@@ -36,7 +45,7 @@ TEST_F(LRUCacheTest, GetFromEmptyCache) {
 
 //Test 2: Put and Get single page
 TEST_F(LRUCacheTest, PutGetSinglePage) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page(1);
     cache.put(1, page, false);
@@ -49,7 +58,7 @@ TEST_F(LRUCacheTest, PutGetSinglePage) {
 
 //Test 3: Put multiple pages
 TEST_F(LRUCacheTest, PutMultiplePages) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     Page page2(2);
@@ -66,7 +75,7 @@ TEST_F(LRUCacheTest, PutMultiplePages) {
 
 //Test 4: Eviction policy
 TEST_F(LRUCacheTest, EvivtionPolicy) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     Page page2(2);
@@ -86,7 +95,7 @@ TEST_F(LRUCacheTest, EvivtionPolicy) {
 
 // Test 5: LRU ordering - access updates recency
 TEST_F(LRUCacheTest, LRUOrderingAfterAccess) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     Page page2(2);
@@ -109,7 +118,7 @@ TEST_F(LRUCacheTest, LRUOrderingAfterAccess) {
 
 // Test 6: Update existing page (no eviction)
 TEST_F(LRUCacheTest, UpdateExistingPage) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     page1.addRow("row1");
@@ -126,7 +135,7 @@ TEST_F(LRUCacheTest, UpdateExistingPage) {
 
 // Test 7: Dirty page handling - eviction writes to disk
 TEST_F(LRUCacheTest, DirtyPageWrittenOnEviction) {
-    LRUCache cache(2, file); // Capacity 2
+    LRUCache cache(2, makeFlushFn()); // Capacity 2
 
     Page page1(1);
     page1.addRow("test_data");
@@ -161,7 +170,7 @@ TEST_F(LRUCacheTest, CleanPageNoWrite) {
     file.write(zeros, PAGE_SIZE);
     file.flush();
 
-    LRUCache cache(2, file);
+    LRUCache cache(2, makeFlushFn());
 
     Page page1(1);
     Page page2(2);
@@ -189,7 +198,7 @@ TEST_F(LRUCacheTest, CleanPageNoWrite) {
 
 // Test 9: Clear cache
 TEST_F(LRUCacheTest, ClearCache) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     Page page2(2);
@@ -204,7 +213,7 @@ TEST_F(LRUCacheTest, ClearCache) {
 
 // Test 10: FlushAll writes all dirty pages
 TEST_F(LRUCacheTest, FlushAllDirtyPages) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     page1.addRow("data1");
@@ -237,7 +246,7 @@ TEST_F(LRUCacheTest, FlushAllDirtyPages) {
 
 // Test 11: Capacity limit enforcement
 TEST_F(LRUCacheTest, CapacityLimitEnforced) {
-    LRUCache cache(1, file);
+    LRUCache cache(1, makeFlushFn());
 
     Page page1(1);
     Page page2(2);
@@ -251,7 +260,7 @@ TEST_F(LRUCacheTest, CapacityLimitEnforced) {
 
 // Test 12: Get updates LRU position
 TEST_F(LRUCacheTest, GetUpdatesLRUPosition) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     Page page2(2);
@@ -273,7 +282,7 @@ TEST_F(LRUCacheTest, GetUpdatesLRUPosition) {
 
 // Test 13: Mixed dirty and clean pages
 TEST_F(LRUCacheTest, MixedDirtyCleanPages) {
-    LRUCache cache(3, file);
+    LRUCache cache(3, makeFlushFn());
 
     Page page1(1);
     Page page2(2);

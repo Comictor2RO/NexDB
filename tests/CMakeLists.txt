@@ -16,6 +16,7 @@ add_executable(tests test_lexer.cpp
         ../Config/Config.cpp
         ../Indexing/BPlusTree/BPlusTree.cpp
         ../Storage/LRUCache/LRUCache.cpp
+        ../Storage/StorageFile/StorageFile.cpp
         ../Storage/Page/Page.cpp
         ../Frontend/Lexer/Lexer.cpp
         ../Frontend/Parser/Parser.cpp

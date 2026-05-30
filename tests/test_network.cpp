@@ -17,13 +17,13 @@ protected:
 
     void SetUp() override {
         cleanup();
-        catalog = new Catalog();
-        engine = new Engine(*catalog);
+        catalog = new Catalog("test_network.cat");
+        engine = new Engine(*catalog, 128, "test_network.db", "test_network.wal");
         engine->query("CREATE TABLE net_users (id INT, name STRING)");
         engine->query("INSERT INTO net_users VALUES (1, Alice)");
         engine->query("INSERT INTO net_users VALUES (2, Bob)");
 
-        server = new NetworkServer(*engine);
+        server = new NetworkServer(*engine, 0, 3, 30, false);  // no localhost bypass in tests
         server->prepare();
         serverThread = std::thread([this]() { server->run(); });
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -39,9 +39,9 @@ protected:
     }
 
     void cleanup() {
-        std::remove("catalog.dat");
-        std::remove("engine.wal");
-        std::remove("net_users.db");
+        std::remove("test_network.cat");
+        std::remove("test_network.db");
+        std::remove("test_network.wal");
         std::remove("server_auth.conf");
     }
 
@@ -185,9 +185,9 @@ TEST_F(NetworkServerTest, AutoPortDetectionPicksDifferentPort) {
     EXPECT_GE(firstPort, 3000u);
     EXPECT_LE(firstPort, 8000u);
 
-    Catalog catalog2;
-    Engine engine2(catalog2);
-    NetworkServer server2(engine2);
+    Catalog catalog2("test_network2.cat");
+    Engine engine2(catalog2, 128, "test_network2.db", "test_network2.wal");
+    NetworkServer server2(engine2, 0, 3, 30, false);
     server2.prepare();
     std::thread t([&]() { server2.run(); });
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -199,6 +199,9 @@ TEST_F(NetworkServerTest, AutoPortDetectionPicksDifferentPort) {
 
     server2.stop();
     t.join();
+    std::remove("test_network2.cat");
+    std::remove("test_network2.db");
+    std::remove("test_network2.wal");
 }
 
 // --- New tests: authentication ---

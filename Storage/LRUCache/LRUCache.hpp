@@ -4,7 +4,7 @@
 #include "../Page/Page.hpp"
 #include <list>
 #include <unordered_map>
-#include <fstream>
+#include <functional>
 
 struct CacheEntry {
     Page page;
@@ -13,7 +13,8 @@ struct CacheEntry {
 
 class LRUCache {
     public:
-        LRUCache(int capacity, std::fstream &file);
+        using FlushFn = std::function<void(int, const Page&)>;
+        LRUCache(int capacity, FlushFn flushFn);
 
         Page* get(int pageId);
         void put(int pageId, const Page &page, bool isDirty);
@@ -22,7 +23,7 @@ class LRUCache {
 
     private:
         int capacity;
-        std::fstream &file;
+        FlushFn flushFn;
         std::list<std::pair<int, CacheEntry>> lruList;
         std::unordered_map<int, std::list<std::pair<int, CacheEntry>>::iterator> cacheMap;
 

@@ -69,24 +69,24 @@ TEST_F(WALManagerTest, MultipleInsertsAndCommit) {
 
 //Test 4: recover replays uncommitted WAL entries and inserts the rows into the table
 TEST_F(WALManagerTest, RecoverReplaysUncommitted) {
+    const std::string catFile = "test_wal4.cat";
+    const std::string dbFile  = "test_wal4.db";
+    std::remove(catFile.c_str());
+    std::remove(dbFile.c_str());
+
+    // Write an uncommitted INSERT into the WAL
     {
         WALManager wal(testWalFile);
         wal.logInsert("users", "1|Alice|25");
     }
 
-    Catalog catalog;
+    // Set up catalog with the table schema
+    Catalog catalog(catFile);
     std::vector<Columns> cols = {{"id", "INT"}, {"name", "TEXT"}, {"age", "INT"}};
     catalog.createTable("users", cols);
 
-    {
-        Table table("users", cols);
-        table.dropStorage();
-    }
-
-    std::remove("engine.wal");
-    std::rename(testWalFile.c_str(), "engine.wal");
-
-    Engine engine(catalog);
+    // Engine constructor calls recover() — replays the uncommitted INSERT
+    Engine engine(catalog, 128, dbFile, testWalFile);
 
     auto results = engine.query("SELECT * FROM users");
     ASSERT_EQ(results.size(), 1);
@@ -94,7 +94,8 @@ TEST_F(WALManagerTest, RecoverReplaysUncommitted) {
     EXPECT_EQ(results[0].values[1], "Alice");
     EXPECT_EQ(results[0].values[2], "25");
 
-    std::remove("engine.wal");
+    std::remove(catFile.c_str());
+    std::remove(dbFile.c_str());
 }
 
 //Test 5: logDelete with condition writes correct format
@@ -140,14 +141,17 @@ TEST_F(WALManagerTest, LogUpdateCreatesEntry) {
 
 class WALRecoveryTest : public ::testing::Test {
 protected:
+    const std::string catFile = "test_wal_recovery.cat";
+    const std::string dbFile  = "test_wal_recovery.db";
+    const std::string walFile = "test_wal_recovery.wal";
+
     void SetUp() override  { cleanup(); }
     void TearDown() override { cleanup(); }
 
     void cleanup() {
-        std::remove("engine.wal");
-        std::remove("catalog.dat");
-        std::remove("wal_del.db");
-        std::remove("wal_upd.db");
+        std::remove(catFile.c_str());
+        std::remove(dbFile.c_str());
+        std::remove(walFile.c_str());
     }
 };
 
@@ -157,16 +161,16 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedDelete) {
 
     // Setup: insert a row via Engine
     {
-        Catalog catalog;
+        Catalog catalog(catFile);
         catalog.createTable("wal_del", cols);
-        Engine engine(catalog);
+        Engine engine(catalog, 128, dbFile, walFile);
         engine.query("INSERT INTO wal_del VALUES (1, Alice)");
     }
-    std::remove("engine.wal");
+    std::remove(walFile.c_str());
 
     // Simulate crash: log DELETE without commit
     {
-        WALManager wal("engine.wal");
+        WALManager wal(walFile);
         Condition cond;
         cond.column = "id";
         cond.op    = "=";
@@ -175,8 +179,8 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedDelete) {
     }
 
     // Recovery: Engine constructor calls recover()
-    Catalog catalog;
-    Engine engine(catalog);
+    Catalog catalog(catFile);
+    Engine engine(catalog, 128, dbFile, walFile);
     auto results = engine.query("SELECT * FROM wal_del");
     EXPECT_EQ(results.size(), 0);
 }
@@ -187,16 +191,16 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedUpdate) {
 
     // Setup: insert a row via Engine
     {
-        Catalog catalog;
+        Catalog catalog(catFile);
         catalog.createTable("wal_upd", cols);
-        Engine engine(catalog);
+        Engine engine(catalog, 128, dbFile, walFile);
         engine.query("INSERT INTO wal_upd VALUES (1, Alice)");
     }
-    std::remove("engine.wal");
+    std::remove(walFile.c_str());
 
     // Simulate crash: log UPDATE without commit
     {
-        WALManager wal("engine.wal");
+        WALManager wal(walFile);
         Condition cond;
         cond.column = "id";
         cond.op    = "=";
@@ -206,8 +210,8 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedUpdate) {
     }
 
     // Recovery
-    Catalog catalog;
-    Engine engine(catalog);
+    Catalog catalog(catFile);
+    Engine engine(catalog, 128, dbFile, walFile);
     auto results = engine.query("SELECT * FROM wal_upd");
     ASSERT_EQ(results.size(), 1);
     EXPECT_EQ(results[0].values[1], "Bob");

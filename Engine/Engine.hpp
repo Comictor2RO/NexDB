@@ -11,15 +11,19 @@
 #include "../WALManager/WALManager.hpp"
 #include "../Frontend/Lexer/Lexer.hpp"
 #include "../Frontend/Parser/Parser.hpp"
+#include "../Storage/StorageFile/StorageFile.hpp"
 
 class Engine {
     public:
-        Engine(Catalog &catalog, int cacheCapacity = 128);
+        Engine(Catalog &catalog, int cacheCapacity = 128,
+               const std::string &storagePath = "nexdb.db",
+               const std::string &walPath = "engine.wal");
 
         void execute(Statement *statement);
         std::vector<Row> query(const std::string &sql);
     private:
         Catalog &catalog;
+        StorageFile storage;
         WALManager wal;
         int cacheCapacity;
 

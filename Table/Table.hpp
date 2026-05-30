@@ -3,6 +3,7 @@
 
 #include "../AST/Condition/Condition.hpp"
 #include "../Storage/PageManager/PageManager.hpp"
+#include "../Storage/StorageFile/StorageFile.hpp"
 #include "../AST/Columns/Columns.hpp"
 #include "../AST/Row/Row.hpp"
 #include "../Indexing/BPlusTree/BPlusTree.hpp"
@@ -19,7 +20,8 @@ enum class TableError {
 
 class Table {
     public:
-        Table(const std::string &name, const std::vector<Columns> &scheme, int cacheCapacity = 128);
+        Table(const std::string &name, const std::vector<Columns> &scheme,
+              StorageFile &storage, int tableId, int cacheCapacity = 128);
 
         std::expected<void, TableError> insertRow(const Row &row);
         std::vector<Row> selectRow(Condition *cond);

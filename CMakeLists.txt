@@ -101,6 +101,8 @@ add_executable(NexDB
         Indexing/BPlusTree/BPlusTree.hpp
         Storage/LRUCache/LRUCache.hpp
         Storage/LRUCache/LRUCache.cpp
+        Storage/StorageFile/StorageFile.hpp
+        Storage/StorageFile/StorageFile.cpp
         WALManager/WALManager.hpp
         WALManager/WALManager.cpp
         GUI/GUI.hpp

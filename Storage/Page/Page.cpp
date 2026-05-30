@@ -10,6 +10,18 @@ Page::Page(int pageId)
     memset(data, 0, PAGE_SIZE);
     PageHeader *header = (PageHeader *)data;
     header->pageId = pageId;
+    header->tableId = 0;
+    header->freeSpace = PAGE_SIZE - sizeof(PageHeader);
+    header->rowNumber = 0;
+    header->nextRowOffset = sizeof(PageHeader);
+}
+
+Page::Page(int pageId, int tableId)
+{
+    memset(data, 0, PAGE_SIZE);
+    PageHeader *header = (PageHeader *)data;
+    header->pageId = pageId;
+    header->tableId = tableId;
     header->freeSpace = PAGE_SIZE - sizeof(PageHeader);
     header->rowNumber = 0;
     header->nextRowOffset = sizeof(PageHeader);
@@ -46,6 +58,12 @@ int Page::getPageId() const
 {
     PageHeader *header = (PageHeader *)data;
     return header->pageId;
+}
+
+int Page::getTableId() const
+{
+    const PageHeader *header = (const PageHeader *)data;
+    return header->tableId;
 }
 
 int Page::getFreeSpace() const

@@ -5,13 +5,17 @@
 
 class EngineTest : public ::testing::Test {
 protected:
+    const std::string catFile  = "test_engine.cat";
+    const std::string dbFile   = "test_engine.db";
+    const std::string walFile  = "test_engine.wal";
+
     Catalog *catalog = nullptr;
     Engine *engine = nullptr;
 
     void SetUp() override {
         cleanup();
-        catalog = new Catalog();
-        engine = new Engine(*catalog);
+        catalog = new Catalog(catFile);
+        engine = new Engine(*catalog, 128, dbFile, walFile);
     }
 
     void TearDown() override {
@@ -21,15 +25,9 @@ protected:
     }
 
     void cleanup() {
-        std::remove("catalog.dat");
-        std::remove("engine.wal");
-        std::remove("eng_users.db");
-        std::remove("eng_orders.db");
-        std::remove("eng_multi.db");
-        std::remove("eng_del.db");
-        std::remove("eng_upd.db");
-        std::remove("eng_drop.db");
-        std::remove("eng_col.db");
+        std::remove(catFile.c_str());
+        std::remove(dbFile.c_str());
+        std::remove(walFile.c_str());
     }
 };
 
@@ -142,9 +140,9 @@ TEST_F(EngineTest, CatalogPersistsAcrossEngineInstances) {
     delete engine;
     delete catalog;
 
-    std::remove("engine.wal");
-    catalog = new Catalog();
-    engine = new Engine(*catalog);
+    std::remove(walFile.c_str());
+    catalog = new Catalog(catFile);
+    engine = new Engine(*catalog, 128, dbFile, walFile);
 
     EXPECT_TRUE(catalog->tableExists("eng_orders"));
     auto results = engine->query("SELECT * FROM eng_orders");

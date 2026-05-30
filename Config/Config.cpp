@@ -32,6 +32,11 @@ Config Config::load(const std::string &path)
         if (val.empty())
             continue;
 
+        if (key == "database") {
+            config.database = val;
+            continue;
+        }
+
         int n = std::stoi(val);
 
         if (key == "port")

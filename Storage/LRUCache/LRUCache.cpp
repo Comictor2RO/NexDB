@@ -1,7 +1,7 @@
 #include "LRUCache.hpp"
 
-LRUCache::LRUCache(int capacity, std::fstream &file)
-    : capacity(capacity), file(file)
+LRUCache::LRUCache(int capacity, FlushFn flushFn)
+    : capacity(capacity), flushFn(std::move(flushFn))
 {}
 
 Page *LRUCache::get(int pageId)
@@ -51,18 +51,7 @@ void LRUCache::evict()
     auto &last = lruList.back();
     int pageId = last.first;
     if (last.second.isDirty)
-    {
-        if (!file.is_open())
-            return;
-        file.clear();
-        file.seekp(pageId * PAGE_SIZE);
-        file.write(last.second.page.getBuffer(), PAGE_SIZE);
-        if (file.fail()) {
-            file.clear();
-        }
-        file.flush();
-    }
-
+        flushFn(pageId, last.second.page);
     cacheMap.erase(pageId);
     lruList.pop_back();
 }

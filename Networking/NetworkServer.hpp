@@ -34,7 +34,7 @@ struct RateLimitEntry {
 
 class NetworkServer {
     public:
-        NetworkServer(Engine &engine, int port = 0, int maxFailures = 3, int banSeconds = 30);
+        NetworkServer(Engine &engine, int port = 0, int maxFailures = 3, int banSeconds = 30, bool bypassLocalhost = true);
 
         void prepare();
         void run();
@@ -47,6 +47,7 @@ class NetworkServer {
         int configPort;
         int maxFailures;
         int banSeconds;
+        bool bypassLocalhost;
         size_t port = 0;
         asio::io_context io_context;
         tcp::acceptor acceptor;

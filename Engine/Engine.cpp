@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <stdexcept>
 
-Engine::Engine(Catalog &catalog, int cacheCapacity) : catalog(catalog), wal("engine.wal"), cacheCapacity(cacheCapacity)
+Engine::Engine(Catalog &catalog, int cacheCapacity,
+               const std::string &storagePath, const std::string &walPath)
+    : catalog(catalog), storage(storagePath), wal(walPath), cacheCapacity(cacheCapacity)
 {
     wal.recover(*this);
 }
@@ -42,15 +44,13 @@ void Engine::executeDrop(const DropStatement &stmt)
 
 void Engine::dropTableStorage(const std::string &tableName)
 {
-    std::vector<Columns> scheme = catalog.getColumns(tableName);
-    Table table(tableName, scheme, cacheCapacity);
-    table.dropStorage();
+    storage.freePagesForTable(catalog.getTableId(tableName));
 }
 
 void Engine::executeInsert(const InsertStatement &stmt)
 {
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, cacheCapacity);
+    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
 
     Row row;
     row.values = stmt.getValues();
@@ -95,7 +95,7 @@ void Engine::executeInsert(const InsertStatement &stmt)
 std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
 {
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, cacheCapacity);
+    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
 
     std::vector<Row> allRows = table.selectRow(stmt.getCondition());
     const std::vector<std::string> &selectedColumns = stmt.getColumns();
@@ -132,7 +132,7 @@ void Engine::executeDelete(const DeleteStatement &stmt)
 {
     wal.logDelete(stmt.getTable(), stmt.getCondition());
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, cacheCapacity);
+    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
     table.deleteRow(stmt.getCondition());
     wal.commit();
 }
@@ -141,7 +141,7 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
 {
     wal.logUpdate(stmt.getTable(), stmt.getCondition(), stmt.getAssignments());
     std::vector<Columns> scheme = catalog.getColumns(stmt.getTable());
-    Table table(stmt.getTable(), scheme, cacheCapacity);
+    Table table(stmt.getTable(), scheme, storage, catalog.getTableId(stmt.getTable()), cacheCapacity);
     table.updateRow(stmt.getCondition(), stmt.getAssignments());
     wal.commit();
 }

@@ -3,5 +3,6 @@
   "page_size": 4096,
   "cache_capacity": 128,
   "aux_max_failures": 3,
-  "aux_timeout": 30
+  "aux_timeout": 30,
+  "database": "mydb"
 }
