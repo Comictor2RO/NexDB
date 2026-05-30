@@ -35,8 +35,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/GUI/GUI.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUI/GUI.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Storage/PageManager/PageManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Storage/PageManager/PageManager.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_catalog.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_catalog.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_network.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_network.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_pagemanager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_pagemanager.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,6 +66,65 @@
     <commands />
     <urls />
   </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.385296404118627" />
+      <entry key="MS500" value="3.8508602137458854" />
+      <entry key="S2" value="10.797262350371621" />
+      <entry key="S5" value="18.131658608561814" />
+      <entry key="S10" value="23.35117290587118" />
+      <entry key="S30" value="28.611570936797047" />
+      <entry key="S60" value="31.493910909383192" />
+      <entry key="M2" value="41.700378077181334" />
+      <entry key="M5" value="77.96895221623248" />
+      <entry key="M10" value="117.03928149905701" />
+      <entry key="M15" value="139.13324338205402" />
+      <entry key="M30" value="169.3899055996053" />
+      <entry key="H1" value="188.80053353868132" />
+      <entry key="H2" value="199.87256596069662" />
+      <entry key="H4" value="205.79680605134453" />
+      <entry key="D1" value="210.94608060585026" />
+      <entry key="W1" value="211.8489397905641" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="0.0" />
+      <entry key="S30" value="0.0" />
+      <entry key="S60" value="0.0" />
+      <entry key="M2" value="0.0" />
+      <entry key="M5" value="0.0" />
+      <entry key="M10" value="0.0" />
+      <entry key="M15" value="0.0" />
+      <entry key="M30" value="0.0" />
+      <entry key="H1" value="0.0" />
+      <entry key="H2" value="0.0" />
+      <entry key="H4" value="0.0" />
+      <entry key="D1" value="0.0" />
+      <entry key="W1" value="0.0" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.3355500332670946" />
+      <entry key="MS500" value="3.8211503994385874" />
+      <entry key="S2" value="10.776814072249799" />
+      <entry key="S5" value="18.117989980503847" />
+      <entry key="S10" value="23.34235798636254" />
+      <entry key="S30" value="28.607962032332388" />
+      <entry key="S60" value="31.491927629593118" />
+      <entry key="M2" value="41.69907910264008" />
+      <entry key="M5" value="77.9679810864104" />
+      <entry key="M10" value="117.03851932090176" />
+      <entry key="M15" value="139.1326167916408" />
+      <entry key="M30" value="169.38950238906946" />
+      <entry key="H1" value="188.800300475656" />
+      <entry key="H2" value="199.87244001696772" />
+      <entry key="H4" value="205.79674049761974" />
+      <entry key="D1" value="210.94606930030167" />
+      <entry key="W1" value="211.84893816588934" />
+    </decayedShown>
+  </component>
   <component name="ProjectApplicationVersion">
     <option name="ide" value="CLion" />
     <option name="majorVersion" value="2026" />
@@ -76,39 +140,39 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;CMake Application.NexDB.executor&quot;: &quot;Run&quot;,
-    &quot;Google Test.tests.executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.RadMigrateCodeStyle&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.west.config.association.type.startup.service&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
-    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;ctest.advertisement.all.test.configuration.is.created&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/comic/Desktop/Proiecte Weekend/NexDB&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "CMake Application.NexDB.executor": "Run",
+    "Google Test.tests.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.RadMigrateCodeStyle": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "RunOnceActivity.west.config.association.type.startup.service": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "ctest.advertisement.all.test.configuration.is.created": "true",
+    "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "C:/Users/comic/Desktop/Proiecte Weekend/NexDB",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "org.rust.first.attach.projects": "true",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected="CMake Application.NexDB">
     <configuration name="tests" type="CMakeGoogleTestRunConfigurationType" factoryName="Google Test" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="NexDB" TARGET_NAME="tests" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="NexDB" RUN_TARGET_NAME="tests" TEST_MODE="SUITE_TEST">
       <method v="2">
@@ -177,7 +241,10 @@
       <updated>1778536925134</updated>
       <workItem from="1778536926595" duration="134000" />
       <workItem from="1778613463468" duration="5994000" />
-      <workItem from="1778677410905" duration="9837000" />
+      <workItem from="1778677410905" duration="10155000" />
+      <workItem from="1778770512779" duration="218000" />
+      <workItem from="1780140674884" duration="262000" />
+      <workItem from="1780141233846" duration="1960000" />
     </task>
     <servers />
   </component>

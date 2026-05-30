@@ -88,9 +88,20 @@ protected:
         // Send SQL query
         asio::write(sock, asio::buffer(query + "\n"));
 
+        // Read lines until OK, END, or ERROR (server never closes the connection)
+        // readBuf must live outside the loop — read_until may buffer data past the delimiter
         std::string response;
-        asio::error_code ec;
-        asio::read(sock, asio::dynamic_buffer(response), ec);
+        asio::streambuf readBuf;
+        while (true) {
+            asio::read_until(sock, readBuf, "\n");
+            std::istream lineStream(&readBuf);
+            std::string line;
+            std::getline(lineStream, line);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            response += line + "\n";
+            if (line == "OK" || line == "END" || line.rfind("ERROR", 0) == 0)
+                break;
+        }
         return response;
     }
 
@@ -130,7 +141,7 @@ protected:
     }
 };
 
-// --- Teste existente (acum cu auth) ---
+// --- Teste existente ---
 
 // Test 1: SELECT * returneaza toate rows
 TEST_F(NetworkServerTest, SelectAllReturnsRows) {
@@ -152,13 +163,13 @@ TEST_F(NetworkServerTest, SelectWithConditionReturnsFilteredRow) {
     EXPECT_EQ(response.find("Bob"), std::string::npos);
 }
 
-// Test 4: query invalid returneaza ERROR
+// Test 4: invalid query returns ERROR
 TEST_F(NetworkServerTest, InvalidQueryReturnsError) {
     std::string response = sendQuery("SELECT * FROM nonexistent_table");
     EXPECT_NE(response.find("ERROR"), std::string::npos);
 }
 
-// Test 5: DELETE returneaza OK si row-ul dispare
+// Test 5: DELETE returns OK and row disappears
 TEST_F(NetworkServerTest, DeleteReturnsOK) {
     std::string response = sendQuery("DELETE FROM net_users WHERE id = 1");
     EXPECT_EQ(response, "OK\n");
@@ -190,15 +201,15 @@ TEST_F(NetworkServerTest, AutoPortDetectionPicksDifferentPort) {
     t.join();
 }
 
-// --- Teste noi: autentificare ---
+// --- New tests: authentication ---
 
-// Test 7: token corect → AUTH OK, SQL functioneaza
+// Test 7: correct token → AUTH OK, SQL works
 TEST_F(NetworkServerTest, CorrectTokenAuthenticates) {
     std::string response = sendQueryWithToken(server->getAuthToken(), "SELECT * FROM net_users");
     EXPECT_NE(response.find("Alice"), std::string::npos);
 }
 
-// Test 8: token gresit → AUTH FAIL
+// Test 8: wrong token → AUTH FAIL
 TEST_F(NetworkServerTest, WrongTokenReturnsAuthFail) {
     asio::io_context ctx;
     tcp::socket sock(ctx);
@@ -223,7 +234,7 @@ TEST_F(NetworkServerTest, WrongTokenReturnsAuthFail) {
     EXPECT_EQ(authResponse, "AUTH FAIL");
 }
 
-// Test 9: nonce e diferit la fiecare conexiune (nu e static/hardcodat)
+// Test 9: nonce is different per connection (not static/hardcoded)
 TEST_F(NetworkServerTest, NonceIsDifferentPerConnection) {
     auto getNonce = [&]() {
         asio::io_context ctx;
@@ -236,6 +247,10 @@ TEST_F(NetworkServerTest, NonceIsDifferentPerConnection) {
         std::string line;
         std::getline(is, line);
         if (!line.empty() && line.back() == '\r') line.pop_back();
+        // Send a dummy AUTH to unblock the server's read_until before disconnecting
+        asio::write(sock, asio::buffer(std::string("AUTH skip\n")));
+        asio::streambuf discard;
+        asio::read_until(sock, discard, "\n");
         return line; // "CHALLENGE <nonce>"
     };
 
@@ -244,14 +259,14 @@ TEST_F(NetworkServerTest, NonceIsDifferentPerConnection) {
     EXPECT_NE(c1, c2);
 }
 
-// Test 10: 3 token-uri gresite → al 4-lea raspuns este AUTH BANNED
+// Test 10: 3 wrong tokens → 4th response is AUTH BANNED
 TEST_F(NetworkServerTest, ThreeFailsResultsInBan) {
     sendWrongAuth(3);
     std::string lastResponse = sendWrongAuth(1);
     EXPECT_EQ(lastResponse, "AUTH BANNED");
 }
 
-// Test 11: getAuthToken returneaza un string non-gol dupa prepare()
+// Test 11: getAuthToken returns a non-empty string after prepare()
 TEST_F(NetworkServerTest, AuthTokenIsNonEmpty) {
     EXPECT_FALSE(server->getAuthToken().empty());
 }

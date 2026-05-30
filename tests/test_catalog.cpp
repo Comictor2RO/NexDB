@@ -136,7 +136,7 @@ TEST(CatalogTest, EmptySchema) {
     EXPECT_FALSE(catalog.tableExists("empty_schema"));
 }
 
-// Test 11: createTable concurent — doar un thread reuseste, schema nu e corupta
+// Test 11: concurrent createTable — only one thread succeeds, schema is not corrupted
 TEST(CatalogTest, ConcurrentCreateSameTable) {
     Catalog catalog;
     std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
@@ -152,7 +152,7 @@ TEST(CatalogTest, ConcurrentCreateSameTable) {
     EXPECT_EQ(cols.size(), 2);
 }
 
-// Test 12: citiri concurente — tableExists si getColumns nu se blocheaza reciproc
+// Test 12: concurrent reads — tableExists and getColumns do not block each other
 TEST(CatalogTest, ConcurrentReadsDoNotBlock) {
     Catalog catalog;
     catalog.createTable("read_table", {{"id", "INT"}});
@@ -175,7 +175,7 @@ TEST(CatalogTest, ConcurrentReadsDoNotBlock) {
     EXPECT_EQ(successCount.load(), THREADS * 2);
 }
 
-// Test 13: createTable si dropTable concurent — nu exista crash sau date corupte
+// Test 13: concurrent createTable and dropTable — no crash or corrupted data
 TEST(CatalogTest, ConcurrentCreateAndDrop) {
     Catalog catalog;
     std::vector<Columns> schema = {{"id", "INT"}};
@@ -187,7 +187,7 @@ TEST(CatalogTest, ConcurrentCreateAndDrop) {
         threads.emplace_back([&]() { catalog.dropTable("cd_table"); });
     for (auto &t : threads) t.join();
 
-    // Starea finala trebuie sa fie consistenta (nu crash, nu date corupte)
+    // Final state must be consistent (no crash, no corrupted data)
     bool exists = catalog.tableExists("cd_table");
     auto cols = catalog.getColumns("cd_table");
     if (exists)
@@ -208,7 +208,7 @@ TEST(CatalogTest, ConcurrentWriteAndRead) {
         threads.emplace_back([&]() { catalog.createTable("wr_table", schema); });
         threads.emplace_back([&]() {
             auto cols = catalog.getColumns("wr_table");
-            // O singura varianta valida: lista goala (inainte de creare) sau lista completa
+            // Only valid states: empty list (before creation) or full list
             if (!cols.empty() && cols.size() != 2)
                 corruptReads++;
         });

@@ -12,7 +12,7 @@ PageManager::PageManager(std::string filename, int cacheCapacity) : cache(cacheC
     }
 
     if (!file.is_open()) {
-        throw std::runtime_error("Nu s-a putut deschide sau crea fisierul bazei de date: " + filename);
+        throw std::runtime_error("Failed to open or create database file: " + filename);
     }
 
     file.seekg(0, std::ios::end);
@@ -64,17 +64,17 @@ void PageManager::clearAll()
         if (file.is_open())
             file.close();
 
-        // Trunchiere fisier
+        // Truncate file
         file.open(filename, std::ios::out | std::ios::trunc | std::ios::binary);
         if (!file.is_open()) {
-            throw std::runtime_error("Nu s-a putut trunchia fisierul: " + filename);
+            throw std::runtime_error("Failed to truncate file: " + filename);
         }
         file.close();
 
-        // Redeschidere pentru in/out
+        // Reopen for in/out
         file.open(filename, std::ios::in | std::ios::out | std::ios::binary);
         if (!file.is_open()) {
-            throw std::runtime_error("Nu s-a putut redeschide fisierul dupa trunchiere: " + filename);
+            throw std::runtime_error("Failed to reopen file after truncation: " + filename);
         }
 
         file.clear(); // Reset error flags (EOF etc.)

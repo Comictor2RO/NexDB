@@ -158,7 +158,7 @@ void GUI::executeQuery()
     catch (...)
     {
         results.clear();
-        logs.push_back("[ERROR] Query invalid sau tabela inexistenta.");
+        logs.push_back("[ERROR] Invalid query or table does not exist.");
     }
     input.clear();
     cursorPos = 0;
@@ -223,7 +223,7 @@ void GUI::drawResultsPanel()
     int rowHeight = 26;
     int maxRows   = (440 - 35) / rowHeight;
 
-    // Asigură-te că scroll index-ul este valid
+    // Ensure scroll index is valid
     if (resultsScrollIndex > (int)results.size() - 1) 
         resultsScrollIndex = std::max(0, (int)results.size() - 1);
 

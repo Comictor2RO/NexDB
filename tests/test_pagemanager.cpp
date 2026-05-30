@@ -13,7 +13,7 @@ protected:
     void TearDown() override { std::remove(testFile.c_str()); }
 };
 
-// Test 1: inserare simpla, citire inapoi
+// Test 1: simple insert, read back
 TEST_F(PageManagerTest, InsertAndReadBack) {
     PageManager pm(testFile);
     pm.insertRow("hello");
@@ -25,7 +25,7 @@ TEST_F(PageManagerTest, InsertAndReadBack) {
     EXPECT_EQ(rows[1], "world");
 }
 
-// Test 2: insertRowWithLocation returneaza pozitia corecta
+// Test 2: insertRowWithLocation returns correct position
 TEST_F(PageManagerTest, InsertWithLocationReturnsValidIds) {
     PageManager pm(testFile);
     auto r1 = pm.insertRowWithLocation("row1");
@@ -35,11 +35,11 @@ TEST_F(PageManagerTest, InsertWithLocationReturnsValidIds) {
     EXPECT_TRUE(r2.success);
     EXPECT_GE(r1.pageId, 0);
     EXPECT_GE(r1.rowIndex, 0);
-    // r2 vine dupa r1 — ori acelasi page cu rowIndex mai mare, ori page nou
+    // r2 comes after r1 — either same page with higher rowIndex, or a new page
     EXPECT_TRUE(r2.pageId > r1.pageId || r2.rowIndex > r1.rowIndex);
 }
 
-// Test 3: clearAll sterge toate randurile
+// Test 3: clearAll removes all rows
 TEST_F(PageManagerTest, ClearAllRemovesRows) {
     PageManager pm(testFile);
     pm.insertRow("a");
@@ -50,7 +50,7 @@ TEST_F(PageManagerTest, ClearAllRemovesRows) {
     EXPECT_EQ(pm.getNumberOfPages(), 0);
 }
 
-// Test 4: inserare concurenta — nu se pierd randuri si nu exista duplicate
+// Test 4: concurrent insert — no lost rows and no duplicates
 TEST_F(PageManagerTest, ConcurrentInsertNoDuplicatesNoLoss) {
     PageManager pm(testFile);
     const int THREADS = 8;
@@ -69,12 +69,12 @@ TEST_F(PageManagerTest, ConcurrentInsertNoDuplicatesNoLoss) {
     auto rows = pm.getAllRows();
     EXPECT_EQ((int)rows.size(), THREADS * ROWS_PER_THREAD);
 
-    // Fara duplicate
+    // No duplicates
     std::set<std::string> unique(rows.begin(), rows.end());
     EXPECT_EQ(unique.size(), rows.size());
 }
 
-// Test 5: insertRowWithLocation concurent — fiecare rand ocupa o pozitie unica
+// Test 5: concurrent insertRowWithLocation — each row occupies a unique position
 TEST_F(PageManagerTest, ConcurrentInsertUniqueLocations) {
     PageManager pm(testFile);
     const int THREADS = 4;
@@ -94,7 +94,7 @@ TEST_F(PageManagerTest, ConcurrentInsertUniqueLocations) {
     }
     for (auto &th : threads) th.join();
 
-    // Fiecare (pageId, rowIndex) trebuie sa fie unic
+    // Each (pageId, rowIndex) must be unique
     std::set<std::pair<int,int>> unique(locations.begin(), locations.end());
     EXPECT_EQ(unique.size(), locations.size());
 }
