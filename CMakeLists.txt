@@ -123,8 +123,13 @@ add_executable(NexDB
 )
 
 # Link main app
-target_link_libraries(NexDB PRIVATE raylib opengl32 gdi32 winmm ws2_32 wsock32)
-target_link_options(NexDB PRIVATE -static-libgcc -static-libstdc++ -Wl,--allow-multiple-definition)
+if(WIN32)
+    target_link_libraries(NexDB PRIVATE raylib opengl32 gdi32 winmm ws2_32 wsock32)
+    target_link_options(NexDB PRIVATE -static-libgcc -static-libstdc++ -Wl,--allow-multiple-definition)
+else()
+    find_package(OpenGL REQUIRED)
+    target_link_libraries(NexDB PRIVATE raylib OpenGL::GL X11 Xrandr Xi Xxf86vm Xinerama Xcursor pthread dl m)
+endif()
 
 # Copiază resources lângă executabil
 add_custom_command(TARGET NexDB POST_BUILD

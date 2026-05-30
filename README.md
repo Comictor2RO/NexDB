@@ -201,7 +201,7 @@ string secret = File.ReadAllText("server_auth.conf").Trim();
 
 using var db = new NexDBClient("127.0.0.1", 3000, secret);
 
-db.Query("CREATE TABLE users (id INT, name TEXT, age INT)");
+db.Query("CREATE TABLE users (id INT, name STRING, age INT)");
 db.Query("INSERT INTO users VALUES (1, Alice, 30)");
 db.Query("INSERT INTO users VALUES (2, Bob, 25)");
 
@@ -224,7 +224,7 @@ USE DATABASE myproject
 USE myproject
 
 -- Table management
-CREATE TABLE products (id INT, name TEXT, price INT)
+CREATE TABLE products (id INT, name STRING, price INT)
 DROP TABLE products
 
 -- Data manipulation
@@ -235,13 +235,19 @@ UPDATE products SET price = 79 WHERE id = 1
 DELETE FROM products WHERE id = 1
 ```
 
-Supported types: `INT`, `STRING`, `TEXT`
+Supported types: `INT`, `STRING`
 
 Supported operators in WHERE: `=`, `!=`, `<`, `>`, `<=`, `>=`
+
+String values can optionally be wrapped in single quotes: `WHERE name = 'Alice'` and `VALUES (1, 'Alice')` are both valid.
 
 ---
 
 ## Building
+
+Dependencies (ASIO, Raylib, GTest) are fetched automatically via CMake FetchContent. `config.json` is copied to the build output directory on every build.
+
+### Windows (MinGW)
 
 Requirements: CMake 3.20+, MinGW with C++23 support.
 
@@ -251,9 +257,19 @@ cmake --build cmake-build-debug
 ./cmake-build-debug/bin/NexDB.exe
 ```
 
-Dependencies (ASIO, Raylib, GTest) are fetched automatically via CMake FetchContent.
+### Linux
 
-`config.json` is copied automatically to the build output directory on every build.
+Requirements: CMake 3.20+, GCC 13+ or Clang 17+ with C++23 support, plus X11 and OpenGL development libraries.
+
+```bash
+# Ubuntu/Debian
+sudo apt install cmake build-essential libx11-dev libxrandr-dev libxi-dev \
+     libxxf86vm-dev libxinerama-dev libxcursor-dev libgl1-mesa-dev
+
+cmake -B cmake-build-debug
+cmake --build cmake-build-debug
+./cmake-build-debug/bin/NexDB
+```
 
 ---
 

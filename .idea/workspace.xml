@@ -36,22 +36,7 @@
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Engine/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Engine/Engine.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Frontend/Lexer/Lexer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Lexer/Lexer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Frontend/Lexer/TokenType.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Lexer/TokenType.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUI/GUI.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/GUI/GUI.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/main.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/tests/CMakeLists.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_engine.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_network.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_network.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_wal.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_wal.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -78,23 +63,23 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.334052531874946" />
-      <entry key="MS500" value="3.900938945649133" />
-      <entry key="S2" value="12.352264844525134" />
-      <entry key="S5" value="26.237066687439746" />
-      <entry key="S10" value="44.8108210671908" />
-      <entry key="S30" value="91.67431844272285" />
-      <entry key="S60" value="123.50749951613794" />
-      <entry key="M2" value="158.36861315019428" />
-      <entry key="M5" value="246.37740698965862" />
-      <entry key="M10" value="390.04398725720745" />
-      <entry key="M15" value="515.3091909424028" />
-      <entry key="M30" value="795.5415886712485" />
-      <entry key="H1" value="1094.9810284377904" />
-      <entry key="H2" value="1331.4557002895092" />
-      <entry key="H4" value="1483.179606811873" />
-      <entry key="D1" value="1631.5786460251948" />
-      <entry key="W1" value="1659.3085962425384" />
+      <entry key="MS100" value="1.0741951555561977" />
+      <entry key="MS500" value="3.264957940744422" />
+      <entry key="S2" value="10.49024627083965" />
+      <entry key="S5" value="22.214888621633552" />
+      <entry key="S10" value="35.85210654230397" />
+      <entry key="S30" value="54.93264761869211" />
+      <entry key="S60" value="65.36017237461384" />
+      <entry key="M2" value="82.6378061570758" />
+      <entry key="M5" value="123.417420019767" />
+      <entry key="M10" value="215.4240010372107" />
+      <entry key="M15" value="325.15193599203934" />
+      <entry key="M30" value="625.8993937417775" />
+      <entry key="H1" value="999.7893946559224" />
+      <entry key="H2" value="1323.3920954507028" />
+      <entry key="H4" value="1542.1417525460865" />
+      <entry key="D1" value="1763.6640052265725" />
+      <entry key="W1" value="1805.840794749538" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -116,23 +101,23 @@
       <entry key="W1" value="0.0" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.29775226903231" />
-      <entry key="MS500" value="3.8808687368817294" />
-      <entry key="S2" value="12.33614171248056" />
-      <entry key="S5" value="26.222925217220673" />
-      <entry key="S10" value="44.79863313194943" />
-      <entry key="S30" value="91.66605298164487" />
-      <entry key="S60" value="123.50182857734337" />
-      <entry key="M2" value="158.36235745038766" />
-      <entry key="M5" value="246.36442288114088" />
-      <entry key="M10" value="390.03055746627757" />
-      <entry key="M15" value="515.2975366518176" />
-      <entry key="M30" value="795.5337798769824" />
-      <entry key="H1" value="1094.9763886711494" />
-      <entry key="H2" value="1331.45313887429" />
-      <entry key="H4" value="1483.1782549698944" />
-      <entry key="D1" value="1631.5784096757782" />
-      <entry key="W1" value="1659.3085621906462" />
+      <entry key="MS100" value="1.044881692178245" />
+      <entry key="MS500" value="3.2484780421593618" />
+      <entry key="S2" value="10.4774656751196" />
+      <entry key="S5" value="22.203937747790235" />
+      <entry key="S10" value="35.8431511667425" />
+      <entry key="S30" value="54.92801010057413" />
+      <entry key="S60" value="65.35732398400145" />
+      <entry key="M2" value="82.6358577353363" />
+      <entry key="M5" value="123.41561650489655" />
+      <entry key="M10" value="215.42028532300083" />
+      <entry key="M15" value="325.14712784577415" />
+      <entry key="M30" value="625.8943791654797" />
+      <entry key="H1" value="999.7856406492132" />
+      <entry key="H2" value="1323.3897653341955" />
+      <entry key="H4" value="1542.1404481118327" />
+      <entry key="D1" value="1763.6637656459204" />
+      <entry key="W1" value="1805.8407599388045" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -255,7 +240,7 @@
       <workItem from="1778677410905" duration="10155000" />
       <workItem from="1778770512779" duration="218000" />
       <workItem from="1780140674884" duration="262000" />
-      <workItem from="1780141233846" duration="7203000" />
+      <workItem from="1780141233846" duration="7893000" />
     </task>
     <servers />
   </component>
