@@ -133,13 +133,18 @@ After `AUTH OK`, send SQL queries terminated with `\n`:
 SELECT * FROM users WHERE age > 18\n
 ```
 
-**Response formats:**
+**Response formats:** every response is a **single line of JSON** terminated by `\n`.
+
 | Case | Response |
 |------|----------|
-| Success, no rows | `OK\n` |
-| Success, with rows | `col1\|col2\|col3\n` per row, then `END\n` |
-| Database switch (`USE`) | `SWITCH <dbname>\n` |
-| Error | `ERROR: <message>\n` |
+| Success, no rows | `{"type": "ok"}` |
+| Success, with rows | `{"type": "rows", "rows": [["1", "Alice"], ["2", "Bob"]]}` |
+| Database switch (`USE`) | `{"type": "switch", "db": "<dbname>"}` |
+| Error | `{"type": "error", "message": "<message>"}` |
+
+All values are JSON-escaped, so any character — including `|`, newlines, or the literal
+text `END` — is safe inside a value. Clients read one line and parse it with a standard
+JSON parser (`JSON.parse`, `json.loads`, `System.Text.Json`, …).
 
 ---
 
@@ -150,6 +155,7 @@ SELECT * FROM users WHERE age > 18\n
 ```csharp
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using System.Security.Cryptography;
 
 public class NexDBClient : IDisposable
@@ -187,16 +193,32 @@ public class NexDBClient : IDisposable
     {
         _writer.WriteLine(sql);
 
-        var rows = new List<string[]>();
-        string? line;
-        while ((line = _reader.ReadLine()) != null)
+        // Each response is a single line of JSON.
+        string line = _reader.ReadLine() ?? throw new Exception("Connection closed by server");
+
+        using var doc = JsonDocument.Parse(line);
+        string type = doc.RootElement.GetProperty("type").GetString()!;
+
+        switch (type)
         {
-            if (line == "OK") break;
-            if (line.StartsWith("ERROR:"))
-                throw new Exception(line);
-            rows.Add(line.Split('|'));
+            case "ok":
+            case "switch":
+                return new List<string[]>();
+            case "error":
+                throw new Exception(doc.RootElement.GetProperty("message").GetString());
+            case "rows":
+                var rows = new List<string[]>();
+                foreach (var row in doc.RootElement.GetProperty("rows").EnumerateArray())
+                {
+                    var cells = new List<string>();
+                    foreach (var cell in row.EnumerateArray())
+                        cells.Add(cell.GetString()!);
+                    rows.Add(cells.ToArray());
+                }
+                return rows;
+            default:
+                throw new Exception("Unknown response type: " + type);
         }
-        return rows;
     }
 
     public void Dispose()

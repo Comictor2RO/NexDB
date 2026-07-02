@@ -84,21 +84,14 @@ protected:
         // Send SQL query
         asio::write(sock, asio::buffer(query + "\n"));
 
-        // Read lines until OK, END, or ERROR (server never closes the connection)
-        // readBuf must live outside the loop — read_until may buffer data past the delimiter
-        std::string response;
+        // Read the single-line JSON response (one frame terminated by \n)
         asio::streambuf readBuf;
-        while (true) {
-            asio::read_until(sock, readBuf, "\n");
-            std::istream lineStream(&readBuf);
-            std::string line;
-            std::getline(lineStream, line);
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            response += line + "\n";
-            if (line == "OK" || line == "END" || line.rfind("ERROR", 0) == 0)
-                break;
-        }
-        return response;
+        asio::read_until(sock, readBuf, "\n");
+        std::istream lineStream(&readBuf);
+        std::string line;
+        std::getline(lineStream, line);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        return line + "\n";
     }
 
     // Connects and sends wrong auth N times, returns last server response
@@ -149,7 +142,7 @@ TEST_F(NetworkServerTest, SelectAllReturnsRows) {
 // Test 2: INSERT returneaza OK
 TEST_F(NetworkServerTest, InsertReturnsOK) {
     std::string response = sendQuery("INSERT INTO net_users VALUES (3, Charlie)");
-    EXPECT_EQ(response, "OK\n");
+    EXPECT_EQ(response, "{\"type\": \"ok\"}\n");
 }
 
 // Test 3: SELECT cu WHERE returneaza doar row-ul corect
@@ -162,13 +155,13 @@ TEST_F(NetworkServerTest, SelectWithConditionReturnsFilteredRow) {
 // Test 4: invalid query returns ERROR
 TEST_F(NetworkServerTest, InvalidQueryReturnsError) {
     std::string response = sendQuery("SELECT * FROM nonexistent_table");
-    EXPECT_NE(response.find("ERROR"), std::string::npos);
+    EXPECT_NE(response.find("\"type\": \"error\""), std::string::npos);
 }
 
 // Test 5: DELETE returns OK and row disappears
 TEST_F(NetworkServerTest, DeleteReturnsOK) {
     std::string response = sendQuery("DELETE FROM net_users WHERE id = 1");
-    EXPECT_EQ(response, "OK\n");
+    EXPECT_EQ(response, "{\"type\": \"ok\"}\n");
 
     std::string selectResponse = sendQuery("SELECT * FROM net_users");
     EXPECT_EQ(selectResponse.find("Alice"), std::string::npos);
@@ -267,4 +260,34 @@ TEST_F(NetworkServerTest, ThreeFailsResultsInBan) {
 // Test 11: getAuthToken returns a non-empty string after prepare()
 TEST_F(NetworkServerTest, AuthTokenIsNonEmpty) {
     EXPECT_FALSE(server->getAuthToken().empty());
+}
+
+// --- New tests: JSON wire protocol ---
+
+// Test 12: OK / rows / error responses are valid single-line JSON objects
+TEST_F(NetworkServerTest, ResponsesAreJsonObjects) {
+    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (5, Dave)"), "{\"type\": \"ok\"}\n");
+
+    std::string rows = sendQuery("SELECT * FROM net_users WHERE id = 5");
+    EXPECT_NE(rows.find("\"type\": \"rows\""), std::string::npos);
+    EXPECT_NE(rows.find("\"Dave\""), std::string::npos);
+
+    std::string err = sendQuery("SELECT * FROM nonexistent_table");
+    EXPECT_NE(err.find("\"type\": \"error\""), std::string::npos);
+}
+
+// Test 13: values containing '|', newlines, or the literal "END" survive serialization
+// (these used to collide with the old '|'-delimited / END-terminated protocol)
+TEST_F(NetworkServerTest, SpecialCharactersInValuesAreEscaped) {
+    sendQuery("INSERT INTO net_users VALUES (6, 'a|b')");
+    sendQuery("INSERT INTO net_users VALUES (7, 'END')");
+
+    // The response must remain a single JSON line and preserve the raw value.
+    std::string r1 = sendQuery("SELECT * FROM net_users WHERE id = 6");
+    EXPECT_NE(r1.find("\"type\": \"rows\""), std::string::npos);
+    EXPECT_NE(r1.find("a|b"), std::string::npos);
+
+    std::string r2 = sendQuery("SELECT * FROM net_users WHERE id = 7");
+    EXPECT_NE(r2.find("\"type\": \"rows\""), std::string::npos);
+    EXPECT_NE(r2.find("END"), std::string::npos);
 }

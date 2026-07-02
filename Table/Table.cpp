@@ -143,7 +143,7 @@ std::expected<void, TableError> Table::insertRow(const Row &row)
     std::string serialized;
     for (int i = 0; i < (int)row.values.size(); i++)
     {
-        serialized += row.values[i];
+        serialized += walEncode(row.values[i]);
         if (i + 1 < (int)row.values.size())
             serialized += "|";
     }
@@ -191,6 +191,8 @@ std::vector<Row> Table::selectRow(Condition *cond)
                 {
                     Row row;
                     row.values = split(pageRows[localIndex], '|');
+                    for (auto &v : row.values)
+                        v = walDecode(v);
                     return { row };
                 }
                 else
@@ -215,6 +217,8 @@ std::vector<Row> Table::selectRow(Condition *cond)
     {
         Row row;
         row.values = split(raw, '|');
+        for (auto &v : row.values)
+            v = walDecode(v);
         if (cond == nullptr || evaluateCondition(cond, row, scheme))
             result.push_back(row);
     }
@@ -314,6 +318,8 @@ void Table::rebuildIndex()
         {
             Row row;
             row.values = split(rows[r], '|');
+            for (auto &v : row.values)
+                v = walDecode(v);
             if (!row.values.empty() && !scheme.empty() && scheme[0].type == "INT")
             {
                 try

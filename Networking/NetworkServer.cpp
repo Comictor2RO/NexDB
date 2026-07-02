@@ -9,6 +9,45 @@
 #include <sstream>
 #include <iomanip>
 
+static std::string jsonEscape(const std::string &s) {
+    std::ostringstream out;
+    out << '"';
+
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"' :
+                out << "\\\"";
+                break;
+            case '\\':
+                out << "\\\\";
+                break;
+            case '\b':
+                out << "\\b";
+                break;
+            case '\f':
+                out << "\\f";
+                break;
+            case '\n':
+                out << "\\n";
+                break;
+            case '\r':
+                out << "\\r";
+                break;
+            case '\t':
+                out << "\\t";
+                break;
+            default:
+                if (c <= 0x1F)
+                    out << "\\u" << std::hex << std::uppercase << std::setw(4)
+                    << std::setfill('0') << static_cast<int>(c) << std::dec << std::nouppercase;
+                else
+                    out << c;
+        }
+    }
+    out << '"';
+    return out.str();
+}
+
 NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds, bool bypassLocalhost, int numThreads)
     : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds), bypassLocalhost(bypassLocalhost), numThreads(numThreads)
 {};
@@ -264,23 +303,27 @@ std::string NetworkServer::executeQuery(std::string &query)
 
         std::string pending = engine.consumePendingSwitch();
         if (!pending.empty())
-            return "SWITCH " + pending + "\n";
+            return "{\"type\": \"switch\", \"db\": " + jsonEscape(pending) + "}\n";
 
         if (rows.empty())
-            return "OK\n";
+            return "{\"type\": \"ok\"}\n";
 
-        std::string result;
+        std::string result = "{\"type\": \"rows\", \"rows\": [";
+        bool first = true;
         for (const Row &row : rows) {
+            if (!first) result += ",";
+            first = false;
+            result += "[";
             for (size_t i = 0; i < row.values.size(); i++) {
-                if (i > 0) result += "|";
-                result += row.values[i];
+                if (i > 0) result += ",";
+                result += jsonEscape(row.values[i]);
             }
-            result += "\n";
+            result += "]";
         }
-        result += "END\n";
+        result += "]}\n";
         return result;
     }
     catch (const std::exception &e) {
-        return std::string("ERROR: ") + e.what() + "\n";
+        return std::string("{\"type\": \"error\", \"message\": ") + jsonEscape(e.what()) + "}\n";
     }
 }
