@@ -31,6 +31,8 @@ class Engine {
         // Returns pending database switch name (empty if none), then clears it
         std::string consumePendingSwitch();
 
+        const std::vector<std::string> &getLastColumns() const;
+
         // Suppress WAL logging during crash recovery replays
         void setRecoveryMode(bool mode) { inRecovery = mode; }
 
@@ -41,6 +43,7 @@ class Engine {
         std::unique_ptr<WALManager>  wal;
         int cacheCapacity;
         std::string pendingSwitch;
+        std::vector<std::string> lastColumns;
 
         void executeCreate(const CreateStatement &statement);
         void executeInsert(const InsertStatement &statement);

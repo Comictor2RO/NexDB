@@ -31,6 +31,7 @@ class GUI {
         NetworkServer server;
         std::thread serverThread;
         bool serverRunning;
+        std::vector<std::string> resultsColumns;
 
         Font regular;
         Font bold;

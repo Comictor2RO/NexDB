@@ -305,10 +305,18 @@ std::string NetworkServer::executeQuery(std::string &query)
         if (!pending.empty())
             return "{\"type\": \"switch\", \"db\": " + jsonEscape(pending) + "}\n";
 
-        if (rows.empty())
+        const std::vector<std::string> &columns = engine.getLastColumns();
+
+        if (rows.empty() && columns.empty())
             return "{\"type\": \"ok\"}\n";
 
-        std::string result = "{\"type\": \"rows\", \"rows\": [";
+        std::string result = "{\"type\": \"rows\", \"columns\": [";
+        for (size_t i = 0; i < columns.size(); i++) {
+            if (i > 0) result += ",";
+            result += jsonEscape(columns[i]);
+        }
+        result += "], \"rows\": [";
+
         bool first = true;
         for (const Row &row : rows) {
             if (!first) result += ",";

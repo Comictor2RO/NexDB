@@ -19,9 +19,14 @@ breaking changes în pachete mai târziu.
   literalul `END` nu mai sparg parsarea. Teste noi în `tests/test_network.cpp` (12, 13).
   Rămâne de adăugat `"columns"` (item separat mai jos) și versionarea.
 
-- [ ] **Lipsesc numele coloanelor în răspuns**
-  Acum `SELECT` întoarce doar valori. Un pachet bun întoarce `{id: 1, name: "..."}`,
-  nu `[1, "..."]`. Serverul trebuie să trimită și header-ul de coloane.
+- [x] **Lipsesc numele coloanelor în răspuns** ✅ *(rezolvat)*
+  `Engine::executeSelect` reține numele coloanelor (schema pentru `SELECT *`, coloanele
+  proiectate altfel) în `lastColumns`, expus prin `Engine::getLastColumns()` și golit la
+  începutul fiecărui `query()`. Ambii consumatori citesc din același getter:
+  `NetworkServer::executeQuery` emite acum `{"type":"rows","columns":[...],"rows":[...]}`,
+  iar GUI-ul (`drawResultsPanel`) desenează un rând-header cu numele coloanelor.
+  Un `SELECT` cu 0 rânduri întoarce totuși header-ul (`"rows":[]`), spre deosebire de
+  comenzile non-SELECT care rămân `{"type":"ok"}`.
   → Ăsta e cel mai important pentru DX-ul „connect in 2 lines of code".
 
 - [ ] **Versiune de protocol + framing clar**

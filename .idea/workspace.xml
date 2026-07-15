@@ -6,6 +6,7 @@
   <component name="BackendCodeEditorMiscSettings">
     <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="4" type="long" />
     <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
+    <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
   </component>
   <component name="CMakePresetLoader">{
   &quot;useNewFormat&quot;: true
@@ -36,12 +37,11 @@
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Engine/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Engine/Engine.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUI/GUI.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUI/GUI.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.hpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/StringUtils/StringUtils.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/StringUtils/StringUtils.hpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Table/Table.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Table/Table.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/WALManager/WALManager.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/WALManager/WALManager.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_network.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_network.cpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -52,7 +52,7 @@
     <option name="formatViaClangd" value="false" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="1270" />
+    <option name="cachedIndexableFilesCount" value="1271" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Debug" />
@@ -68,61 +68,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.2859121319771907" />
-      <entry key="MS500" value="3.58206928042621" />
-      <entry key="S2" value="7.822152539781009" />
-      <entry key="S5" value="9.9818996820113" />
-      <entry key="S10" value="10.995328917969845" />
-      <entry key="S30" value="13.218780303626595" />
-      <entry key="S60" value="16.230812811316298" />
-      <entry key="M2" value="25.950665910519756" />
-      <entry key="M5" value="70.28864865214396" />
-      <entry key="M10" value="143.83638946736545" />
-      <entry key="M15" value="217.34938705081575" />
-      <entry key="M30" value="430.5376990479903" />
-      <entry key="H1" value="810.3264620538105" />
-      <entry key="H2" value="1476.2486685147865" />
-      <entry key="H4" value="2348.2282671890102" />
-      <entry key="D1" value="3873.9006467609092" />
-      <entry key="W1" value="4267.319294336247" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0" />
+      <entry key="S2" value="1.000000794196864" />
+      <entry key="S5" value="1.0036305467615425" />
+      <entry key="S10" value="1.060367557148742" />
+      <entry key="S30" value="1.555761211738663" />
+      <entry key="S60" value="3.601050875617826" />
+      <entry key="M2" value="10.897967099650536" />
+      <entry key="M5" value="45.200985177406125" />
+      <entry key="M10" value="133.9621792366591" />
+      <entry key="M15" value="231.22484410186973" />
+      <entry key="M30" value="498.80173418176724" />
+      <entry key="H1" value="938.6490365910679" />
+      <entry key="H2" value="1658.935379259436" />
+      <entry key="H4" value="2601.718555397093" />
+      <entry key="D1" value="4299.284432383409" />
+      <entry key="W1" value="4746.324049175277" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="0.0" />
-      <entry key="MS500" value="2.6528232200721566E-90" />
-      <entry key="S2" value="4.035781649341181E-23" />
-      <entry key="S5" value="1.1074203719998908E-9" />
-      <entry key="S10" value="3.542657023240205E-5" />
-      <entry key="S30" value="0.04691894740905196" />
-      <entry key="S60" value="0.3915348052333093" />
-      <entry key="M2" value="1.5212331790272944" />
-      <entry key="M5" value="3.9955762107434794" />
-      <entry key="M10" value="5.961482779993031" />
-      <entry key="M15" value="7.2781128342221795" />
-      <entry key="M30" value="9.864279042176976" />
-      <entry key="H1" value="12.383001621147615" />
-      <entry key="H2" value="14.461345998255398" />
-      <entry key="H4" value="15.954111816298198" />
-      <entry key="D1" value="17.60734414819635" />
-      <entry key="W1" value="17.942412497228744" />
+      <entry key="MS100" value="1.3275113910265555E-129" />
+      <entry key="MS500" value="1.6772880440165016E-26" />
+      <entry key="S2" value="3.5987519467367156E-7" />
+      <entry key="S5" value="0.0026452158276055364" />
+      <entry key="S10" value="0.051477655951405674" />
+      <entry key="S30" value="0.41091875723947735" />
+      <entry key="S60" value="0.8797245518444691" />
+      <entry key="M2" value="1.6445865873220948" />
+      <entry key="M5" value="3.159166843216187" />
+      <entry key="M10" value="5.186666436964786" />
+      <entry key="M15" value="7.018861862757979" />
+      <entry key="M30" value="11.199549978775696" />
+      <entry key="H1" value="15.756860730604027" />
+      <entry key="H2" value="19.61340834482432" />
+      <entry key="H4" value="22.341142642359983" />
+      <entry key="D1" value="25.304162687871102" />
+      <entry key="W1" value="25.89811438678432" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.2588797711308215" />
-      <entry key="MS500" value="3.563632765411989" />
-      <entry key="S2" value="7.8110751560096245" />
-      <entry key="S5" value="9.976014267964953" />
-      <entry key="S10" value="10.988194678762303" />
-      <entry key="S30" value="13.237103265575238" />
-      <entry key="S60" value="16.586336184361596" />
-      <entry key="M2" value="27.434799455887287" />
-      <entry key="M5" value="74.25270822264694" />
-      <entry key="M10" value="149.76920660132222" />
-      <entry key="M15" value="224.59935250893272" />
-      <entry key="M30" value="440.37671059622716" />
-      <entry key="H1" value="822.6890794283979" />
-      <entry key="H2" value="1490.694689561708" />
-      <entry key="H4" value="2364.172112741547" />
-      <entry key="D1" value="3891.505665596491" />
-      <entry key="W1" value="4285.261354420156" />
+      <entry key="MS100" value="0.002489376225232933" />
+      <entry key="MS500" value="0.30145195692269006" />
+      <entry key="S2" value="0.7409774264052594" />
+      <entry key="S5" value="0.8923418897084052" />
+      <entry key="S10" value="1.0450677774334645" />
+      <entry key="S30" value="1.924306494780948" />
+      <entry key="S60" value="4.445705000015061" />
+      <entry key="M2" value="12.511588706253068" />
+      <entry key="M5" value="48.32794519097397" />
+      <entry key="M10" value="139.11416945479255" />
+      <entry key="M15" value="238.20912235728272" />
+      <entry key="M30" value="509.9697632813042" />
+      <entry key="H1" value="954.3802631617621" />
+      <entry key="H2" value="1678.5297485593826" />
+      <entry key="H4" value="2624.0470498269615" />
+      <entry key="D1" value="4324.585738258348" />
+      <entry key="W1" value="4772.221730466921" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -186,11 +186,6 @@
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
     <configuration name="glfw" type="CMakeRunConfiguration" factoryName="Application" folderName="GLFW3" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="NexDB" TARGET_NAME="glfw" CONFIG_NAME="Debug">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
@@ -249,7 +244,12 @@
       <workItem from="1780158195071" duration="5630000" />
       <workItem from="1780607346313" duration="76000" />
       <workItem from="1782980881285" duration="331000" />
-      <workItem from="1782981546057" duration="9063000" />
+      <workItem from="1782981546057" duration="10560000" />
+      <workItem from="1783449721347" duration="277000" />
+      <workItem from="1783450316891" duration="4185000" />
+      <workItem from="1783505452195" duration="4000" />
+      <workItem from="1783538425503" duration="24000" />
+      <workItem from="1784137880543" duration="1757000" />
     </task>
     <servers />
   </component>

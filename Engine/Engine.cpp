@@ -125,8 +125,11 @@ std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
     std::vector<Row> allRows = table.selectRow(stmt.getCondition());
     const std::vector<std::string> &selectedColumns = stmt.getColumns();
 
-    if (selectedColumns.size() == 1 && selectedColumns[0] == "*")
+    if (selectedColumns.size() == 1 && selectedColumns[0] == "*") {
+        for (const auto& c : scheme)
+            lastColumns.push_back(c.name);
         return allRows;
+    }
 
     for (const auto &selectedColumn : selectedColumns)
     {
@@ -135,6 +138,8 @@ std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
         if (!found)
             throw std::runtime_error("Column " + selectedColumn + " does not exist in table " + stmt.getTable() + ".");
     }
+
+    lastColumns = selectedColumns;
 
     std::vector<Row> results;
     for (const auto &row : allRows)
@@ -202,6 +207,10 @@ std::string Engine::consumePendingSwitch()
     return s;
 }
 
+const std::vector<std::string> &Engine::getLastColumns() const {
+    return lastColumns;
+}
+
 void Engine::executeCreateDatabase(const CreateDatabaseStatement &stmt)
 {
     std::filesystem::create_directories("databases");
@@ -235,6 +244,7 @@ std::vector<Row> Engine::query(const std::string &sql)
     std::unique_ptr<Statement> stmt = std::move(result.value());
 
     std::vector<Row> results;
+    lastColumns.clear();
 
     if (!stmt)
         throw std::runtime_error("Invalid SQL query.");

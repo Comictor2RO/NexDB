@@ -140,6 +140,7 @@ void GUI::executeQuery()
     try
     {
         results = engine.query(input);
+        resultsColumns = engine.getLastColumns();
 
         std::string upper = input;
         std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
@@ -153,11 +154,13 @@ void GUI::executeQuery()
     catch (const std::exception &e)
     {
         results.clear();
+        resultsColumns.clear();
         logs.push_back("[ERROR] " + std::string(e.what()));
     }
     catch (...)
     {
         results.clear();
+        resultsColumns.clear();
         logs.push_back("[ERROR] Invalid query or table does not exist.");
     }
     input.clear();
@@ -213,7 +216,7 @@ void GUI::drawResultsPanel()
     DrawTextEx(bold, "RESULTS", Vector2{10, 83}, 22, 2, isDark ? HEADER_TEXT_DARK : HEADER_TEXT_LIGHT);
     DrawTextEx(italic, ("Total rows: " + std::to_string(results.size())).c_str(), Vector2{120, 83}, 22, 2, isDark ? HEADER_TEXT_DARK : HEADER_TEXT_LIGHT);
 
-    if (results.empty())
+    if (results.empty() && resultsColumns.empty())
     {
         DrawTextEx(regular, "No results to display.", Vector2{10, 120}, 18, 2, text);
         return;
@@ -221,7 +224,23 @@ void GUI::drawResultsPanel()
 
     int startY    = 115;
     int rowHeight = 26;
+
+    if (!resultsColumns.empty())
+    {
+        std::string colStr;
+        for (size_t j = 0; j < resultsColumns.size(); j++)
+        {
+            if (j > 0) colStr += "   |   ";
+            colStr += resultsColumns[j];
+        }
+        DrawRectangle(0, startY, 1280, rowHeight, header);
+        DrawTextEx(bold, colStr.c_str(), Vector2{10, (float)startY + 4}, 18, 2,
+                   isDark ? HEADER_TEXT_DARK : HEADER_TEXT_LIGHT);
+        startY += rowHeight;   // rândurile încep sub header
+    }
+
     int maxRows   = (440 - 35) / rowHeight;
+    if (!resultsColumns.empty()) maxRows--;
 
     // Ensure scroll index is valid
     if (resultsScrollIndex > (int)results.size() - 1) 
