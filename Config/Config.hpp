@@ -10,6 +10,7 @@ struct Config {
     int aux_max_failures = 3;
     int aux_timeout = 30;
     int thread_count = 4;
+    bool bypass_localhost = true;
     std::string database = "mydb";
 
     static Config load(const std::string& path = "config.json");

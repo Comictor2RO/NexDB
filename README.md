@@ -41,6 +41,18 @@ Once you press the **Start Server** button, the **logs** section will display th
 
 ## What's new in this version
 
+### Protocol version banner
+Every connection now begins with a version line (`NEXDB/1.0.0\n`) before authentication,
+so clients can detect an incompatible server up front instead of failing on a malformed
+response. The protocol version is bumped whenever the wire format changes.
+
+### Column headers in results
+`SELECT` responses now include a `columns` array alongside the row values
+(`{"type": "rows", "columns": ["id", "name"], "rows": [...]}`), so clients can build named
+objects like `{id: 1, name: "Alice"}` instead of positional arrays. A `SELECT` matching no
+rows still returns the header with an empty `rows` array. The GUI's result panel renders
+these column names as a header row.
+
 ### Multi-table database files
 Previously each table was stored in its own `.db` file. Now all tables share a single `.db` file per database. Pages are tagged with a `tableId` in the page header — the storage layer allocates and reclaims pages per table automatically.
 
@@ -89,6 +101,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
   "aux_max_failures": 3,
   "aux_timeout": 30,
   "thread_count": 4,
+  "bypass_localhost": true,
   "database": "mydb"
 }
 ```
@@ -101,6 +114,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
 | `aux_max_failures` | `3` | Failed auth attempts before IP ban |
 | `aux_timeout` | `30` | Ban duration in seconds |
 | `thread_count` | `4` | Number of threads in the ASIO I/O thread pool |
+| `bypass_localhost` | `true` | Skip the auth handshake for `127.0.0.1` / `::1` connections |
 | `database` | `"mydb"` | Active database name (files stored in `databases/`) |
 
 ---
@@ -109,13 +123,32 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
 
 The server listens on the port configured in `config.json` (default 3000).
 
-### Authentication
+### Protocol banner
 
-Connections from **localhost** (`127.0.0.1` / `::1`) receive `AUTH OK` immediately — no handshake required.
-
-Remote connections must complete a challenge-response handshake:
+The **very first line** on any connection — before authentication — is the protocol
+version, so clients can detect incompatible servers early:
 
 ```
+Server → Client:  NEXDB/1.0.0\n
+```
+
+A client should read this line first and verify the major version matches what it
+supports. Future protocol changes bump this version.
+
+### Authentication
+
+Connections from **localhost** (`127.0.0.1` / `::1`) receive `AUTH OK` immediately after
+the banner — no handshake required (controlled by `bypass_localhost` in `config.json`):
+
+```
+Server → Client:  NEXDB/1.0.0\n
+Server → Client:  AUTH OK\n
+```
+
+Remote connections must complete a challenge-response handshake after the banner:
+
+```
+Server → Client:  NEXDB/1.0.0\n
 Server → Client:  CHALLENGE <16-byte-hex-nonce>\n
 Client → Server:  AUTH <SHA256(secret + nonce)>\n
 Server → Client:  AUTH OK\n   (or AUTH FAIL\n / AUTH BANNED\n)
@@ -137,10 +170,16 @@ SELECT * FROM users WHERE age > 18\n
 
 | Case | Response |
 |------|----------|
-| Success, no rows | `{"type": "ok"}` |
-| Success, with rows | `{"type": "rows", "rows": [["1", "Alice"], ["2", "Bob"]]}` |
+| Success, no rows (non-SELECT) | `{"type": "ok"}` |
+| Success, with rows | `{"type": "rows", "columns": ["id", "name"], "rows": [["1", "Alice"], ["2", "Bob"]]}` |
 | Database switch (`USE`) | `{"type": "switch", "db": "<dbname>"}` |
 | Error | `{"type": "error", "message": "<message>"}` |
+
+A `rows` response always carries a `columns` header listing the column names in the same
+order as the values in each row — so a client can build `{id: 1, name: "Alice"}` objects
+instead of positional arrays. A `SELECT` that matches no rows still returns a `rows`
+response with the header and an empty `rows` array (`{"type": "rows", "columns": [...], "rows": []}`);
+only non-SELECT commands (INSERT/DELETE/…) return `{"type": "ok"}`.
 
 All values are JSON-escaped, so any character — including `|`, newlines, or the literal
 text `END` — is safe inside a value. Clients read one line and parse it with a standard
@@ -153,6 +192,8 @@ JSON parser (`JSON.parse`, `json.loads`, `System.Text.Json`, …).
 ### Basic connection helper (with auth)
 
 ```csharp
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -172,15 +213,30 @@ public class NexDBClient : IDisposable
         _reader = new StreamReader(_stream, Encoding.UTF8);
         _writer = new StreamWriter(_stream, Encoding.UTF8) { AutoFlush = true };
 
-        // Challenge-response handshake
-        string challenge = _reader.ReadLine()!; // "CHALLENGE <nonce>"
-        string nonce = challenge.Split(' ')[1];
-        string hash = ComputeSha256(secret + nonce);
-        _writer.WriteLine("AUTH " + hash);
+        // 1. Protocol banner — always the first line. Verify the major version.
+        string banner = _reader.ReadLine()!; // "NEXDB/1.0.0"
+        if (!banner.StartsWith("NEXDB/1."))
+            throw new Exception("Unsupported server protocol: " + banner);
 
-        string authResult = _reader.ReadLine()!;
-        if (authResult != "AUTH OK")
-            throw new Exception("Authentication failed: " + authResult);
+        // 2. Next line is either AUTH OK (localhost bypass) or a CHALLENGE.
+        string next = _reader.ReadLine()!;
+        if (next == "AUTH OK")
+            return; // localhost bypass — no handshake needed
+
+        if (next.StartsWith("CHALLENGE "))
+        {
+            string nonce = next.Split(' ')[1];
+            string hash = ComputeSha256(secret + nonce);
+            _writer.WriteLine("AUTH " + hash);
+
+            string authResult = _reader.ReadLine()!;
+            if (authResult != "AUTH OK")
+                throw new Exception("Authentication failed: " + authResult);
+        }
+        else
+        {
+            throw new Exception("Unexpected handshake response: " + next);
+        }
     }
 
     private static string ComputeSha256(string input)
@@ -188,6 +244,9 @@ public class NexDBClient : IDisposable
         byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(bytes).ToLower();
     }
+
+    // Column names from the last `rows` response (empty for non-SELECT commands).
+    public string[] Columns { get; private set; } = Array.Empty<string>();
 
     public List<string[]> Query(string sql)
     {
@@ -199,6 +258,8 @@ public class NexDBClient : IDisposable
         using var doc = JsonDocument.Parse(line);
         string type = doc.RootElement.GetProperty("type").GetString()!;
 
+        Columns = Array.Empty<string>();
+
         switch (type)
         {
             case "ok":
@@ -207,6 +268,9 @@ public class NexDBClient : IDisposable
             case "error":
                 throw new Exception(doc.RootElement.GetProperty("message").GetString());
             case "rows":
+                Columns = doc.RootElement.GetProperty("columns")
+                    .EnumerateArray().Select(c => c.GetString()!).ToArray();
+
                 var rows = new List<string[]>();
                 foreach (var row in doc.RootElement.GetProperty("rows").EnumerateArray())
                 {
@@ -219,6 +283,20 @@ public class NexDBClient : IDisposable
             default:
                 throw new Exception("Unknown response type: " + type);
         }
+    }
+
+    // Convenience: returns each row as a column-name → value dictionary,
+    // e.g. { "id": "1", "name": "Alice" }.
+    public List<Dictionary<string, string>> QueryObjects(string sql)
+    {
+        var rows = Query(sql);
+        return rows.Select(r =>
+        {
+            var obj = new Dictionary<string, string>();
+            for (int i = 0; i < Columns.Length && i < r.Length; i++)
+                obj[Columns[i]] = r[i];
+            return obj;
+        }).ToList();
     }
 
     public void Dispose()
@@ -243,9 +321,15 @@ db.Query("CREATE TABLE users (id INT, name STRING, age INT, score FLOAT, active 
 db.Query("INSERT INTO users VALUES (1, Alice, 30, 9.5, true)");
 db.Query("INSERT INTO users VALUES (2, Bob, 25, 7.2, false)");
 
+// Positional rows + the column header
 var rows = db.Query("SELECT * FROM users WHERE age > 20");
+Console.WriteLine(string.Join(" | ", db.Columns));   // id | name | age | score | active
 foreach (var row in rows)
     Console.WriteLine(string.Join(" | ", row));
+
+// Or map straight to named objects: { "id": "1", "name": "Alice", ... }
+foreach (var user in db.QueryObjects("SELECT id, name FROM users WHERE age > 20"))
+    Console.WriteLine($"{user["id"]}: {user["name"]}");
 
 db.Query("UPDATE users SET age = 31 WHERE id = 1");
 db.Query("DELETE FROM users WHERE id = 2");

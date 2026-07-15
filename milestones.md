@@ -29,9 +29,14 @@ breaking changes în pachete mai târziu.
   comenzile non-SELECT care rămân `{"type":"ok"}`.
   → Ăsta e cel mai important pentru DX-ul „connect in 2 lines of code".
 
-- [ ] **Versiune de protocol + framing clar**
-  Un câmp de versiune în handshake (ex. `NEXDB/1`) ca să poți evolua protocolul
-  fără să spargi pachetele vechi. Ieftin acum, salvator mai târziu.
+- [x] **Versiune de protocol + framing clar** ✅ *(rezolvat)*
+  Serverul trimite acum un banner ca **prima linie** pe orice conexiune (înainte de auth):
+  `NEXDB/1.0.0\n` (constanta `NetworkServer::PROTOCOL_VERSION`, emisă în `acceptConnections`,
+  deci acoperă și calea localhost-bypass, și cea autentificată). Clientul citește prima linie
+  și verifică versiunea majoră înainte de a continua. Helper-ii din `tests/test_network.cpp`
+  citesc banner-ul + `CHALLENGE` din același `streambuf` (evită pierderea octeților la segmente
+  TCP combinate); test nou `ServerSendsProtocolBanner` (Test 14). Framing-ul rămâne
+  line-delimited JSON (un `readline` + `JSON.parse`). README actualizat cu noul handshake.
 
 ### 🎯 Propunere concretă de format nou (line-delimited JSON)
 ```

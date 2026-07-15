@@ -240,6 +240,9 @@ void NetworkServer::acceptConnections()
     acceptor.async_accept(io_context, [this](asio::error_code ec, tcp::socket socket) {
         if (!ec) {
             std::string clientIp = socket.remote_endpoint().address().to_string();
+
+            asio::write(socket, asio::buffer(std::string(PROTOCOL_VERSION) + '\n'));
+
             bool authed = (bypassLocalhost && (clientIp == "127.0.0.1" || clientIp == "::1"))
                           ? (asio::write(socket, asio::buffer(std::string("AUTH OK\n"))), true)
                           : handleHandshake(socket, clientIp);

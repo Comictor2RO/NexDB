@@ -37,6 +37,11 @@ Config Config::load(const std::string &path)
             continue;
         }
 
+        if (key == "bypass_localhost") {
+            config.bypass_localhost = (val == "true" || val == "1");
+            continue;
+        }
+
         int n = std::stoi(val);
 
         if (key == "port")

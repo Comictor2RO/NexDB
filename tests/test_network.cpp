@@ -7,6 +7,18 @@
 #include <cstdio>
 #include <sstream>
 
+// Reads one '\n'-terminated line from the socket, reusing `buf` across calls so
+// that bytes from a combined TCP segment (e.g. banner + CHALLENGE arriving
+// together) are not lost between reads.
+static std::string readLine(tcp::socket &sock, asio::streambuf &buf) {
+    asio::read_until(sock, buf, "\n");
+    std::istream is(&buf);
+    std::string line;
+    std::getline(is, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    return line;
+}
+
 class NetworkServerTest : public ::testing::Test {
 protected:
     Engine *engine = nullptr;
@@ -54,13 +66,10 @@ protected:
         auto endpoints = resolver.resolve("127.0.0.1", std::to_string(server->getPort()));
         asio::connect(sock, endpoints);
 
-        // Read CHALLENGE <nonce>
+        // Read protocol banner (NEXDB/...) then CHALLENGE <nonce> — same streambuf
         asio::streambuf buf;
-        asio::read_until(sock, buf, "\n");
-        std::istream is(&buf);
-        std::string challengeLine;
-        std::getline(is, challengeLine);
-        if (!challengeLine.empty() && challengeLine.back() == '\r') challengeLine.pop_back();
+        readLine(sock, buf);                              // banner
+        std::string challengeLine = readLine(sock, buf);  // CHALLENGE <nonce>
 
         // Parse nonce
         std::string nonce = challengeLine.substr(std::string("CHALLENGE ").size());
@@ -104,13 +113,10 @@ protected:
             auto endpoints = resolver.resolve("127.0.0.1", std::to_string(server->getPort()));
             asio::connect(sock, endpoints);
 
-            // First line is either CHALLENGE <nonce> or AUTH BANNED
+            // Banner first, then either CHALLENGE <nonce> or AUTH BANNED
             asio::streambuf buf;
-            asio::read_until(sock, buf, "\n");
-            std::istream is(&buf);
-            std::string firstLine;
-            std::getline(is, firstLine);
-            if (!firstLine.empty() && firstLine.back() == '\r') firstLine.pop_back();
+            readLine(sock, buf);                          // banner
+            std::string firstLine = readLine(sock, buf);
 
             if (firstLine == "AUTH BANNED") {
                 lastResponse = firstLine;
@@ -208,10 +214,8 @@ TEST_F(NetworkServerTest, WrongTokenReturnsAuthFail) {
     asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(server->getPort())));
 
     asio::streambuf buf;
-    asio::read_until(sock, buf, "\n");
-    std::istream is(&buf);
-    std::string challengeLine;
-    std::getline(is, challengeLine);
+    readLine(sock, buf);   // banner
+    readLine(sock, buf);   // CHALLENGE <nonce>
 
     asio::write(sock, asio::buffer(std::string("AUTH totally_wrong_hash\n")));
 
@@ -233,11 +237,8 @@ TEST_F(NetworkServerTest, NonceIsDifferentPerConnection) {
         tcp::resolver resolver(ctx);
         asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(server->getPort())));
         asio::streambuf buf;
-        asio::read_until(sock, buf, "\n");
-        std::istream is(&buf);
-        std::string line;
-        std::getline(is, line);
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        readLine(sock, buf);                    // banner
+        std::string line = readLine(sock, buf); // CHALLENGE <nonce>
         // Send a dummy AUTH to unblock the server's read_until before disconnecting
         asio::write(sock, asio::buffer(std::string("AUTH skip\n")));
         asio::streambuf discard;
@@ -290,4 +291,24 @@ TEST_F(NetworkServerTest, SpecialCharactersInValuesAreEscaped) {
     std::string r2 = sendQuery("SELECT * FROM net_users WHERE id = 7");
     EXPECT_NE(r2.find("\"type\": \"rows\""), std::string::npos);
     EXPECT_NE(r2.find("END"), std::string::npos);
+}
+
+// --- New test: protocol version banner ---
+
+// Test 14: the very first line on any connection is the protocol banner
+TEST_F(NetworkServerTest, ServerSendsProtocolBanner) {
+    asio::io_context ctx;
+    tcp::socket sock(ctx);
+    tcp::resolver resolver(ctx);
+    asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(server->getPort())));
+
+    asio::streambuf buf;
+    std::string banner = readLine(sock, buf);
+    EXPECT_EQ(banner, NetworkServer::PROTOCOL_VERSION);
+
+    // Unblock the server's read_until before disconnecting
+    asio::write(sock, asio::buffer(std::string("AUTH skip\n")));
+    asio::streambuf discard;
+    asio::error_code ec;
+    asio::read_until(sock, discard, "\n", ec);
 }
