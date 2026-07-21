@@ -103,6 +103,52 @@ TEST(LexerTest, EmptyInput) {
     EXPECT_EQ(tokens[0].type, TokenType::END_OF_FILE);
 }
 
+// Test 11: Escaped single quote ('' -> ')
+TEST(LexerTest, EscapedSingleQuote) {
+    Lexer lexer("'don''t'");
+    auto tokens = lexer.tokenize();
+    EXPECT_EQ(tokens[0].type, TokenType::STRING);
+    EXPECT_EQ(tokens[0].value, "don't");
+}
+
+// Test 12: Multiple escaped quotes
+TEST(LexerTest, MultipleEscapedQuotes) {
+    Lexer lexer("'a''b''c'");
+    auto tokens = lexer.tokenize();
+    EXPECT_EQ(tokens[0].type, TokenType::STRING);
+    EXPECT_EQ(tokens[0].value, "a'b'c");
+}
+
+// Test 13: String that is only an escaped quote ('''' -> ')
+TEST(LexerTest, OnlyEscapedQuote) {
+    Lexer lexer("''''");
+    auto tokens = lexer.tokenize();
+    EXPECT_EQ(tokens[0].type, TokenType::STRING);
+    EXPECT_EQ(tokens[0].value, "'");
+}
+
+// Test 14: Empty string stays empty (regression)
+TEST(LexerTest, EmptyString) {
+    Lexer lexer("''");
+    auto tokens = lexer.tokenize();
+    EXPECT_EQ(tokens[0].type, TokenType::STRING);
+    EXPECT_EQ(tokens[0].value, "");
+}
+
+// Test 15: Escaped quote inside a full INSERT statement
+TEST(LexerTest, EscapedQuoteInInsert) {
+    Lexer lexer("INSERT INTO t VALUES (1, 'don''t')");
+    auto tokens = lexer.tokenize();
+    bool foundString = false;
+    for (const auto& token : tokens) {
+        if (token.type == TokenType::STRING && token.value == "don't") {
+            foundString = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(foundString);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

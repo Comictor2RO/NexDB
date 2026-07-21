@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="BackendCodeEditorMiscSettings">
-    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="4" type="long" />
+    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="3" type="long" />
     <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
     <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
   </component>
@@ -37,8 +37,6 @@
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.hpp" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -48,8 +46,11 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
+  <component name="CurrentDebugProfile">
+    <option name="debugProfileId" value="61cf5273-1ce1-4188-ad73-94623220e73d" />
+  </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="1271" />
+    <option name="cachedIndexableFilesCount" value="93" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Debug" />
@@ -65,61 +66,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0000000000139802" />
-      <entry key="S2" value="1.0029922070806192" />
-      <entry key="S5" value="1.2011646048899856" />
-      <entry key="S10" value="2.111181664866142" />
-      <entry key="S30" value="6.565008912992047" />
-      <entry key="S60" value="11.65611411314118" />
-      <entry key="M2" value="17.02547017517089" />
-      <entry key="M5" value="34.59558285296642" />
-      <entry key="M10" value="94.07994009431906" />
-      <entry key="M15" value="173.0749672280006" />
-      <entry key="M30" value="426.9554644230266" />
-      <entry key="H1" value="878.7167450760547" />
-      <entry key="H2" value="1623.4475000406692" />
-      <entry key="H4" value="2606.8114453817825" />
-      <entry key="D1" value="4412.060230862755" />
-      <entry key="W1" value="4893.813585365721" />
+      <entry key="MS100" value="1.846391679262798" />
+      <entry key="MS500" value="4.18790917246166" />
+      <entry key="S2" value="9.658085248103626" />
+      <entry key="S5" value="18.5728894443671" />
+      <entry key="S10" value="28.093093643060254" />
+      <entry key="S30" value="40.862463945994485" />
+      <entry key="S60" value="46.38941767443887" />
+      <entry key="M2" value="55.29843371850065" />
+      <entry key="M5" value="94.71650747084688" />
+      <entry key="M10" value="165.60936450256088" />
+      <entry key="M15" value="242.3538754982075" />
+      <entry key="M30" value="488.8621867854129" />
+      <entry key="H1" value="944.6301901514039" />
+      <entry key="H2" value="1704.1596746750638" />
+      <entry key="H4" value="2715.732643336617" />
+      <entry key="D1" value="4600.097160897307" />
+      <entry key="W1" value="5107.906929416644" />
     </decayedCancelled>
     <decayedSelected>
-      <entry key="MS100" value="4.560057102461897E-41" />
-      <entry key="MS500" value="8.546613337294506E-9" />
-      <entry key="S2" value="0.009614982852619297" />
-      <entry key="S5" value="0.1560196881920332" />
-      <entry key="S10" value="0.39499327613521884" />
-      <entry key="S30" value="0.7337192288467027" />
-      <entry key="S60" value="0.8565753470604368" />
-      <entry key="M2" value="0.9274525200020386" />
-      <entry key="M5" value="1.1824415068848784" />
-      <entry key="M10" value="2.33118136057631" />
-      <entry key="M15" value="3.8461479088445776" />
-      <entry key="M30" value="8.139453108398085" />
-      <entry key="H1" value="13.58257258795109" />
-      <entry key="H2" value="18.527318015831256" />
-      <entry key="H4" value="22.119775233269728" />
-      <entry key="D1" value="26.068189580965292" />
-      <entry key="W1" value="26.863474469492537" />
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="4.686725926007345E-131" />
+      <entry key="S5" value="7.384954483158718E-53" />
+      <entry key="S10" value="8.593575788435593E-27" />
+      <entry key="S30" value="2.048289335417314E-9" />
+      <entry key="S60" value="4.525809527238949E-5" />
+      <entry key="M2" value="0.006741507721876426" />
+      <entry key="M5" value="0.164955122456336" />
+      <entry key="M10" value="0.8707011781301599" />
+      <entry key="M15" value="1.9947479543602769" />
+      <entry key="M30" value="5.86173591981581" />
+      <entry key="H1" value="11.526502435031896" />
+      <entry key="H2" value="17.067515736791655" />
+      <entry key="H4" value="21.230468967537558" />
+      <entry key="D1" value="25.890514669733403" />
+      <entry key="W1" value="26.837241256383276" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.04358573957345017" />
-      <entry key="MS500" value="0.5344029967050705" />
-      <entry key="S2" value="0.8621352973736206" />
-      <entry key="S5" value="1.1989682601559855" />
-      <entry key="S10" value="2.235169634622312" />
-      <entry key="S30" value="6.982365173789416" />
-      <entry key="S60" value="12.257274600660166" />
-      <entry key="M2" value="17.781016653897925" />
-      <entry key="M5" value="35.69169935077946" />
-      <entry key="M10" value="96.35679604371987" />
-      <entry key="M15" value="176.87601542931645" />
-      <entry key="M30" value="435.0588585742103" />
-      <entry key="H1" value="892.2707508168619" />
-      <entry key="H2" value="1641.9537259680715" />
-      <entry key="H4" value="2628.9172173234406" />
-      <entry key="D1" value="4438.125248134698" />
-      <entry key="W1" value="4920.67657841708" />
+      <entry key="MS100" value="1.7858898174333209" />
+      <entry key="MS500" value="4.145229891421001" />
+      <entry key="S2" value="9.637543031715898" />
+      <entry key="S5" value="18.559182216965006" />
+      <entry key="S10" value="28.08290527123601" />
+      <entry key="S30" value="40.857416456467114" />
+      <entry key="S60" value="46.386563948544044" />
+      <entry key="M2" value="55.30223769379324" />
+      <entry key="M5" value="94.86839355130888" />
+      <entry key="M10" value="166.45905916438966" />
+      <entry key="M15" value="244.32468233664613" />
+      <entry key="M30" value="494.69763107496146" />
+      <entry key="H1" value="956.1322738283238" />
+      <entry key="H2" value="1721.2076680593889" />
+      <entry key="H4" value="2736.949624867785" />
+      <entry key="D1" value="4625.984516872062" />
+      <entry key="W1" value="5134.743688577274" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -140,6 +141,7 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;CMake Application.NexDB.executor&quot;: &quot;Run&quot;,
+    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
     &quot;Google Test.tests.executor&quot;: &quot;Run&quot;,
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
@@ -246,7 +248,11 @@
       <workItem from="1783450316891" duration="4185000" />
       <workItem from="1783505452195" duration="4000" />
       <workItem from="1783538425503" duration="24000" />
-      <workItem from="1784137880543" duration="2924000" />
+      <workItem from="1784137880543" duration="3895000" />
+      <workItem from="1784215607919" duration="4000" />
+      <workItem from="1784246816767" duration="670000" />
+      <workItem from="1784248020368" duration="25000" />
+      <workItem from="1784397064811" duration="3000" />
     </task>
     <servers />
   </component>

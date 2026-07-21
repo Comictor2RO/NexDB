@@ -57,17 +57,30 @@ Token Lexer::readNumber()
     return {TokenType::NUMBER, number};
 }
 
-//Read string jumps over '' and gets the value inside them
+//Read string: skips the opening quote, collects the value and treats a
+//doubled quote ('') as an escaped literal ' (SQL-standard escaping), so
+//INSERT INTO t VALUES (1, 'don''t') stores don't
 Token Lexer::readString()
 {
     position++;
     std::string str;
-    while(position < input.length() && input[position] != '\'')
+    while(position < input.length())
     {
+        if(input[position] == '\'')
+        {
+            //A doubled quote is an escaped '; a single quote ends the string
+            if(position + 1 < input.length() && input[position + 1] == '\'')
+            {
+                str += '\'';
+                position += 2;
+                continue;
+            }
+            break;
+        }
         str += input[position];
         position++;
     }
-    position++;
+    position++; //skip the closing quote
     return {TokenType::STRING, str};
 }
 

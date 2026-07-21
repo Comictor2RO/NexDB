@@ -53,8 +53,13 @@ ambiguități de delimitatori, extensibil (poți adăuga câmpuri fără breakin
 
 ## 🟠 P1 — Recomandate înainte de release-ul pachetelor (nu blocante)
 
-- [ ] **Escape pentru `'` în string-uri** (`INSERT INTO t VALUES (1, don't)` sparge parserul).
-  Se poate face client-side în pachet (parametrizare), dar mai curat server-side.
+- [x] **Escape pentru `'` în string-uri** ✅ *(rezolvat — server-side, SQL-standard)*
+  `Lexer::readString` tratează acum un apostrof dublat (`''`) ca `'` literal; un `'` singur
+  închide string-ul. Deci `INSERT INTO t VALUES (1, 'don''t')` stochează `don't`. Fixul e
+  complet în lexer — parserul doar consumă token-ul `STRING`, iar la ieșire `'` e inofensiv
+  (`jsonEscape` acoperă `"`/`\`, storage-ul e length-prefixed, `walEncode` codează doar
+  `|`/`~`/`%`/newline). Teste noi în `tests/test_lexer.cpp` (11–15) și un round-trip
+  end-to-end în `tests/test_engine.cpp` (11b).
 - [ ] **Mesaje de eroare clare + în engleză** (uniformizare; acum `Parse error: 5` nu ajută la debug).
 - [ ] **Validare config** — crash dacă `config.json` are valori invalide (ex. `"port": "abc"`).
 

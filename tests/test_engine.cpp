@@ -128,6 +128,16 @@ TEST_F(EngineTest, MultipleRowsInsertAndSelect) {
     EXPECT_EQ(results[4].values[1], "25");
 }
 
+//Test 11b: A string value with an escaped quote round-trips through INSERT/SELECT
+TEST_F(EngineTest, EscapedQuoteRoundTrips) {
+    engine->query("CREATE TABLE eng_quote (id INT, note STRING)");
+    engine->query("INSERT INTO eng_quote VALUES (1, 'don''t')");
+
+    auto results = engine->query("SELECT * FROM eng_quote");
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].values[1], "don't");
+}
+
 //Test 11: Catalog and data persist correctly across Engine restarts
 TEST_F(EngineTest, CatalogPersistsAcrossEngineInstances) {
     engine->query("CREATE TABLE eng_orders (id INT, amount INT)");
