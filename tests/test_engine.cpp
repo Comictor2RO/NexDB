@@ -138,6 +138,19 @@ TEST_F(EngineTest, EscapedQuoteRoundTrips) {
     EXPECT_EQ(results[0].values[1], "don't");
 }
 
+//Test 11c: A parse error surfaces a readable English message, not a numeric code
+TEST_F(EngineTest, ParseErrorMessageIsReadable) {
+    try {
+        engine->query("INSERT INTO eng_bad VALUES ()");
+        FAIL() << "Expected a parse error to be thrown";
+    } catch (const std::runtime_error &e) {
+        std::string msg = e.what();
+        //Must be human-readable, not the old "Parse error: 5"
+        EXPECT_NE(msg.find("Parse error"), std::string::npos);
+        EXPECT_EQ(msg.find_first_of("0123456789"), std::string::npos);
+    }
+}
+
 //Test 11: Catalog and data persist correctly across Engine restarts
 TEST_F(EngineTest, CatalogPersistsAcrossEngineInstances) {
     engine->query("CREATE TABLE eng_orders (id INT, amount INT)");

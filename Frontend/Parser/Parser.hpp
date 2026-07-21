@@ -11,6 +11,7 @@
 #include "../../AST/CreateDatabaseStatement/CreateDatabaseStatement.hpp"
 #include "../../AST/UseDatabaseStatement/UseDatabaseStatement.hpp"
 #include <vector>
+#include <string>
 #include <expected>
 #include <memory>
 
@@ -20,11 +21,24 @@ enum class ParseError {
     END_OF_FILE
 };
 
-struct ParseResult {
-    bool success;
-    ParseError error = ParseError::UnexpectedToken;
-    std::string message;
-};
+//Maps a ParseError to a clear, human-readable English message for the client/GUI
+inline std::string parseErrorMessage(ParseError e)
+{
+    switch (e)
+    {
+        case ParseError::UnexpectedToken:    return "Unexpected token in query";
+        case ParseError::MissingKeyword:     return "Missing required keyword";
+        case ParseError::MissingPunctuation: return "Missing punctuation (e.g. parenthesis or comma)";
+        case ParseError::InvalidIdentifier:  return "Invalid identifier";
+        case ParseError::InvalidType:        return "Invalid column type";
+        case ParseError::EmptyColumns:       return "Empty column or value list";
+        case ParseError::ValuesMismatch:     return "Column count does not match value count";
+        case ParseError::TrailingComma:      return "Trailing comma";
+        case ParseError::ExtraTokens:        return "Unexpected tokens after end of statement";
+        case ParseError::END_OF_FILE:        return "Unexpected end of query";
+    }
+    return "Unknown parse error";
+}
 
 class Parser {
     public:

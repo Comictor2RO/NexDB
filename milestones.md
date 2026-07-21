@@ -60,7 +60,13 @@ ambiguități de delimitatori, extensibil (poți adăuga câmpuri fără breakin
   (`jsonEscape` acoperă `"`/`\`, storage-ul e length-prefixed, `walEncode` codează doar
   `|`/`~`/`%`/newline). Teste noi în `tests/test_lexer.cpp` (11–15) și un round-trip
   end-to-end în `tests/test_engine.cpp` (11b).
-- [ ] **Mesaje de eroare clare + în engleză** (uniformizare; acum `Parse error: 5` nu ajută la debug).
+- [x] **Mesaje de eroare clare + în engleză** ✅ *(rezolvat)*
+  `Parse error: 5` (cast enum→int la `Engine.cpp:242`) devine acum text lizibil printr-un
+  helper `parseErrorMessage(ParseError)` din `Frontend/Parser/Parser.hpp` (ex.
+  `Parse error: Empty column or value list`). Același helper e folosit și în logul de recovery
+  din `WALManager.cpp` (`WAL parse error: ...`). Restul mesajelor din `Engine.cpp` erau deja în
+  engleză — uniformizate stilistic (fără punct final). Struct-ul mort `ParseResult` din
+  `Parser.hpp` a fost eliminat. Test nou anti-regresie în `tests/test_engine.cpp` (11c).
 - [ ] **Validare config** — crash dacă `config.json` are valori invalide (ex. `"port": "abc"`).
 
 ---

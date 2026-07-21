@@ -156,7 +156,7 @@ static void replaySQL(const std::string &sql, Engine &engine)
     Parser parser(tokens);
     auto result = parser.parse();
     if (!result) {
-        std::cerr << "WAL parse error: " << (int)result.error() << std::endl;
+        std::cerr << "WAL parse error: " << parseErrorMessage(result.error()) << std::endl;
         return;
     }
     std::unique_ptr<Statement> stmt = std::move(result.value());

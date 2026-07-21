@@ -66,7 +66,7 @@ void Engine::executeCreate(const CreateStatement &stmt)
 void Engine::executeDrop(const DropStatement &stmt)
 {
     if (!catalog->tableExists(stmt.getTable()))
-        throw std::runtime_error("Table " + stmt.getTable() + " does not exist.");
+        throw std::runtime_error("Table " + stmt.getTable() + " does not exist");
 
     dropTableStorage(stmt.getTable());
     catalog->dropTable(stmt.getTable());
@@ -136,7 +136,7 @@ std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
         bool found = std::any_of(scheme.begin(), scheme.end(),
                                  [&](const Columns &c) { return c.name == selectedColumn; });
         if (!found)
-            throw std::runtime_error("Column " + selectedColumn + " does not exist in table " + stmt.getTable() + ".");
+            throw std::runtime_error("Column " + selectedColumn + " does not exist in table " + stmt.getTable());
     }
 
     lastColumns = selectedColumns;
@@ -225,7 +225,7 @@ void Engine::executeUseDatabase(const UseDatabaseStatement &stmt)
 {
     std::string base = "databases/" + stmt.getName();
     if (!std::filesystem::exists(base + ".db"))
-        throw std::runtime_error("Database '" + stmt.getName() + "' does not exist. Use CREATE DATABASE first.");
+        throw std::runtime_error("Database '" + stmt.getName() + "' does not exist (use CREATE DATABASE first)");
 
     switchDatabase(base + ".db", base + ".cat", base + ".wal");
     pendingSwitch = stmt.getName();
@@ -239,7 +239,7 @@ std::vector<Row> Engine::query(const std::string &sql)
 
     auto result = parser.parse();
     if (!result) {
-        throw std::runtime_error("Parse error in query: " + std::to_string((int)result.error()));
+        throw std::runtime_error("Parse error: " + parseErrorMessage(result.error()));
     }
     std::unique_ptr<Statement> stmt = std::move(result.value());
 
@@ -247,30 +247,30 @@ std::vector<Row> Engine::query(const std::string &sql)
     lastColumns.clear();
 
     if (!stmt)
-        throw std::runtime_error("Invalid SQL query.");
+        throw std::runtime_error("Invalid SQL query");
 
     if (SelectStatement *s = dynamic_cast<SelectStatement*>(stmt.get()))
     {
         if (!catalog->tableExists(s->getTable()))
-            throw std::runtime_error("Table " + s->getTable() + " does not exist.");
+            throw std::runtime_error("Table " + s->getTable() + " does not exist");
         results = executeSelect(*s);
     }
     else if (InsertStatement *ins = dynamic_cast<InsertStatement*>(stmt.get()))
     {
         if (!catalog->tableExists(ins->getTable()))
-            throw std::runtime_error("Table " + ins->getTable() + " does not exist.");
+            throw std::runtime_error("Table " + ins->getTable() + " does not exist");
         execute(stmt.get());
     }
     else if (DeleteStatement *del = dynamic_cast<DeleteStatement*>(stmt.get()))
     {
         if (!catalog->tableExists(del->getTable()))
-            throw std::runtime_error("Table " + del->getTable() + " does not exist.");
+            throw std::runtime_error("Table " + del->getTable() + " does not exist");
         execute(stmt.get());
     }
     else if (DropStatement *drop = dynamic_cast<DropStatement*>(stmt.get()))
     {
         if (!catalog->tableExists(drop->getTable()))
-            throw std::runtime_error("Table " + drop->getTable() + " does not exist.");
+            throw std::runtime_error("Table " + drop->getTable() + " does not exist");
         execute(stmt.get());
     }
     else
