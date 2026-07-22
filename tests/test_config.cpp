@@ -2,6 +2,7 @@
 #include "../Config/Config.hpp"
 #include <fstream>
 #include <cstdio>
+#include <stdexcept>
 
 static const char* TEST_CONFIG = "test_config_tmp.json";
 
@@ -66,4 +67,49 @@ TEST_F(ConfigTest, EmptyFileKeepsDefaults)
     Config cfg = Config::load(TEST_CONFIG);
     EXPECT_EQ(cfg.port,           3000);
     EXPECT_EQ(cfg.cache_capacity, 128);
+}
+
+TEST_F(ConfigTest, NonNumericValueThrows)
+{
+    writeConfig(R"({
+  "port": "abc"
+})");
+
+    EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
+}
+
+TEST_F(ConfigTest, TrailingGarbageThrows)
+{
+    writeConfig(R"({
+  "port": 123abc
+})");
+
+    EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
+}
+
+TEST_F(ConfigTest, PortOutOfRangeThrows)
+{
+    writeConfig(R"({
+  "port": 99999
+})");
+
+    EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
+}
+
+TEST_F(ConfigTest, NonPositiveValueThrows)
+{
+    writeConfig(R"({
+  "cache_capacity": 0
+})");
+
+    EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
+}
+
+TEST_F(ConfigTest, InvalidBoolThrows)
+{
+    writeConfig(R"({
+  "bypass_localhost": "yes"
+})");
+
+    EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
 }

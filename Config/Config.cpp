@@ -3,6 +3,43 @@
 #include <sstream>
 #include <stdexcept>
 
+namespace {
+
+// Parse a strictly-integer config value: the whole string must be a valid int,
+// so "abc" and "123abc" are both rejected instead of silently truncated.
+int parseInt(const std::string &key, const std::string &val)
+{
+    try {
+        size_t pos = 0;
+        int n = std::stoi(val, &pos);
+        if (pos != val.size())
+            throw std::runtime_error(
+                "Invalid config value for '" + key + "': '" + val +
+                "' is not a valid integer");
+        return n;
+    } catch (const std::invalid_argument &) {
+        throw std::runtime_error(
+            "Invalid config value for '" + key + "': '" + val +
+            "' is not a valid integer");
+    } catch (const std::out_of_range &) {
+        throw std::runtime_error(
+            "Invalid config value for '" + key + "': '" + val +
+            "' is out of range");
+    }
+}
+
+int parsePositive(const std::string &key, const std::string &val)
+{
+    int n = parseInt(key, val);
+    if (n <= 0)
+        throw std::runtime_error(
+            "Invalid config value for '" + key + "': " + std::to_string(n) +
+            " must be greater than 0");
+    return n;
+}
+
+} // namespace
+
 Config Config::load(const std::string &path)
 {
     Config config;
@@ -38,24 +75,32 @@ Config Config::load(const std::string &path)
         }
 
         if (key == "bypass_localhost") {
+            if (val != "true" && val != "false" && val != "1" && val != "0")
+                throw std::runtime_error(
+                    "Invalid config value for 'bypass_localhost': '" + val +
+                    "' must be true or false");
             config.bypass_localhost = (val == "true" || val == "1");
             continue;
         }
 
-        int n = std::stoi(val);
-
-        if (key == "port")
+        if (key == "port") {
+            int n = parseInt(key, val);
+            if (n < 1 || n > 65535)
+                throw std::runtime_error(
+                    "Invalid config value for 'port': " + std::to_string(n) +
+                    " must be between 1 and 65535");
             config.port = n;
+        }
         else if (key == "page_size")
-            config.page_size = n;
+            config.page_size = parsePositive(key, val);
         else if (key == "cache_capacity")
-            config.cache_capacity = n;
+            config.cache_capacity = parsePositive(key, val);
         else if (key == "aux_max_failures")
-            config.aux_max_failures = n;
+            config.aux_max_failures = parsePositive(key, val);
         else if (key == "aux_timeout")
-            config.aux_timeout = n;
+            config.aux_timeout = parsePositive(key, val);
         else if (key == "thread_count")
-            config.thread_count = n;
+            config.thread_count = parsePositive(key, val);
     }
 
     return config;

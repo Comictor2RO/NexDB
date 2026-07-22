@@ -2,10 +2,17 @@
 #include "Config/Config.hpp"
 #include "GUI/GUI.hpp"
 #include <filesystem>
+#include <iostream>
 
 int main()
 {
-    Config config = Config::load("config.json");
+    Config config;
+    try {
+        config = Config::load("config.json");
+    } catch (const std::exception &e) {
+        std::cerr << "Config error: " << e.what() << std::endl;
+        return 1;
+    }
 
     std::filesystem::create_directories("databases");
     std::string dbPath  = "databases/" + config.database + ".db";
