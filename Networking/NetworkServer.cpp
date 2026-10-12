@@ -108,8 +108,13 @@ std::string NetworkServer::generateNonce()
     return oss.str();
 }
 
-bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clientIp)
+bool NetworkServer::handleHandshake(Session &session, const std::string &clientIp)
 {
+    tcp::socket &socket = session.socket;
+    // All writes below use the error_code overload: a failed write means the client
+    // is gone, which is a failed handshake, not an exception.
+    asio::error_code ec;
+
     // Check if IP is currently banned
     {
         std::lock_guard<std::mutex> lock(rateLimitMutex);
@@ -119,7 +124,7 @@ bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clie
             auto &entry = it->second;
             if (entry.failCount >= maxFailures && std::chrono::steady_clock::now() < entry.bannedUntil)
             {
-                asio::write(socket, asio::buffer(std::string("AUTH BANNED\n")));
+                asio::write(socket, asio::buffer(std::string("AUTH BANNED\n")), ec);
                 return false;
             }
             if (entry.failCount >= maxFailures && std::chrono::steady_clock::now() >= entry.bannedUntil)
@@ -129,15 +134,16 @@ bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clie
 
     // Send challenge
     std::string nonce = generateNonce();
-    asio::write(socket, asio::buffer("CHALLENGE " + nonce + "\n"));
-
-    // Read client response (synchronous, with 5s timeout via deadline)
-    asio::streambuf buf;
-    asio::error_code ec;
-    asio::read_until(socket, buf, "\n", ec);
+    asio::write(socket, asio::buffer("CHALLENGE " + nonce + "\n"), ec);
     if (ec) return false;
 
-    std::istream is(&buf);
+    // Read client response (synchronous, with 5s timeout via deadline)
+    // Read into the session buffer: anything the client sent after the AUTH line
+    // stays there for handleClient instead of being dropped.
+    asio::read_until(socket, session.readBuffer, "\n", ec);
+    if (ec) return false;
+
+    std::istream is(&session.readBuffer);
     std::string response;
     std::getline(is, response);
     if (!response.empty() && response.back() == '\r') response.pop_back();
@@ -150,8 +156,8 @@ bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clie
     {
         std::lock_guard<std::mutex> lock(rateLimitMutex);
         rateLimitMap[clientIp].failCount = 0;
-        asio::write(socket, asio::buffer(std::string("AUTH OK\n")));
-        return true;
+        asio::write(socket, asio::buffer(std::string("AUTH OK\n")), ec);
+        return !ec;
     }
     else
     {
@@ -160,7 +166,7 @@ bool NetworkServer::handleHandshake(tcp::socket &socket, const std::string &clie
         entry.failCount++;
         if (entry.failCount >= maxFailures)
             entry.bannedUntil = std::chrono::steady_clock::now() + std::chrono::seconds(banSeconds);
-        asio::write(socket, asio::buffer(std::string("AUTH FAIL\n")));
+        asio::write(socket, asio::buffer(std::string("AUTH FAIL\n")), ec);
         return false;
     }
 }
@@ -170,12 +176,31 @@ void NetworkServer::run()
     std::vector<std::thread> pool;
     for (int i = 1; i < numThreads; i++)
         pool.emplace_back([this]() {
-            io_context.run();
+            runWorker();
         });
 
-    io_context.run();
+    runWorker();
     for (auto &t : pool)
         t.join();
+}
+
+// Safety net: an exception escaping a handler leaves io_context.run(), and on a pool
+// thread that means std::terminate. asio allows run() to be called again afterwards,
+// so log it and keep serving. Returns only when run() ends normally (stop()).
+void NetworkServer::runWorker()
+{
+    for (;;) {
+        try {
+            io_context.run();
+            return;
+        }
+        catch (const std::exception &e) {
+            if (logCallback) logCallback("[SERVER ERROR] Handler threw: " + std::string(e.what()));
+        }
+        catch (...) {
+            if (logCallback) logCallback("[SERVER ERROR] Handler threw an unknown exception");
+        }
+    }
 }
 
 size_t NetworkServer::getPort() const
@@ -238,54 +263,76 @@ void NetworkServer::openServer()
 void NetworkServer::acceptConnections()
 {
     acceptor.async_accept(io_context, [this](asio::error_code ec, tcp::socket socket) {
-        if (!ec) {
-            std::string clientIp = socket.remote_endpoint().address().to_string();
+        // Acceptor was closed by stop(): do not re-arm
+        if (ec == asio::error::operation_aborted)
+            return;
 
-            asio::write(socket, asio::buffer(std::string(PROTOCOL_VERSION) + '\n'));
+        // Re-arm first, so no early return or exception below can stop the server
+        // from accepting. Another pool thread can take the next client meanwhile.
+        acceptConnections();
 
-            bool authed = (bypassLocalhost && (clientIp == "127.0.0.1" || clientIp == "::1"))
-                          ? (asio::write(socket, asio::buffer(std::string("AUTH OK\n"))), true)
-                          : handleHandshake(socket, clientIp);
-            if (authed)
-            {
-                if (logCallback) logCallback("[SERVER] Client authenticated: " + clientIp);
-                handleClient((std::make_shared<tcp::socket>(std::move(socket))));
-            }
-            else
-            {
-                if (logCallback) logCallback("[SERVER] Auth failed from: " + clientIp);
-            }
-        }
-        else if (ec == asio::error::operation_aborted) {
+        if (ec) {
+            if (logCallback) logCallback("[SERVER ERROR] " + ec.message());
             return;
         }
-        else {
-            if (logCallback) logCallback("[SERVER ERROR] " + ec.message());
+
+        // From here on, every socket call uses the error_code overload: a client that
+        // disconnects mid-handshake must only cost its own connection.
+        auto session = std::make_shared<Session>(std::move(socket));
+        asio::error_code ioEc;
+
+        tcp::endpoint remote = session->socket.remote_endpoint(ioEc);
+        if (ioEc) {
+            if (logCallback) logCallback("[SERVER] Client disconnected before handshake: " + ioEc.message());
+            return;
+        }
+        std::string clientIp = remote.address().to_string();
+
+        asio::write(session->socket, asio::buffer(std::string(PROTOCOL_VERSION) + '\n'), ioEc);
+        if (ioEc) {
+            if (logCallback) logCallback("[SERVER] Client disconnected during handshake: " + clientIp);
+            return;
         }
 
-        acceptConnections();
+        bool authed;
+        if (bypassLocalhost && (clientIp == "127.0.0.1" || clientIp == "::1")) {
+            asio::write(session->socket, asio::buffer(std::string("AUTH OK\n")), ioEc);
+            authed = !ioEc;
+        }
+        else
+            authed = handleHandshake(*session, clientIp);
+
+        if (authed)
+        {
+            if (logCallback) logCallback("[SERVER] Client authenticated: " + clientIp);
+            handleClient(session);
+        }
+        else
+        {
+            if (logCallback) logCallback("[SERVER] Auth failed from: " + clientIp);
+        }
     });
 }
 
 // Handles communication with a connected client
-void NetworkServer::handleClient(std::shared_ptr<tcp::socket> sharedSocket)
+// The session buffer is reused across calls: if a previous read pulled in more
+// than one line, async_read_until completes from the buffered data first.
+void NetworkServer::handleClient(std::shared_ptr<Session> sharedSession)
 {
-    auto buffer = std::make_shared<asio::streambuf>();
-
-    asio::async_read_until(*sharedSocket, *buffer, "\n", [this, sharedSocket, buffer](asio::error_code ec, std::size_t bytes_transferred) {
+    asio::async_read_until(sharedSession->socket, sharedSession->readBuffer, "\n", [this, sharedSession](asio::error_code ec, std::size_t bytes_transferred) {
         if (!ec && bytes_transferred > 0) {
-            std::istream is(buffer.get());
+            std::istream is(&sharedSession->readBuffer);
             std::string message;
             std::getline(is, message);
             if (!message.empty() && message.back() == '\r')
                 message.pop_back();
 
             auto response = std::make_shared<std::string>(executeQuery(message));
-            asio::async_write(*sharedSocket, asio::buffer(*response), [this, sharedSocket, response](asio::error_code ec, std::size_t) {
+            asio::async_write(sharedSession->socket, asio::buffer(*response), [this, sharedSession, response](asio::error_code ec, std::size_t) {
                 if (ec && logCallback)
                     logCallback("[SERVER ERROR] Send failed: " + ec.message());
                 else
-                    handleClient(sharedSocket);
+                    handleClient(sharedSession);
             });
         }
         else {

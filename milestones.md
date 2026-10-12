@@ -130,9 +130,30 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
 ### Bug-uri adevărate în NetworkServer.cpp
    Fiindcă tot revii la fișierul ăsta — astea sunt problemele reale din el:
    
-- **Query-uri pipeline-uite se pierd silențios.** handleClient creează un streambuf nou la fiecare apel (NetworkServer.cpp:273). async_read_until citește frecvent dincolo de delimitator, deci dacă clientul trimite CREATE TABLE ...\nINSERT ...\n într-un singur send(), al doilea statement rămâne în buffer-ul vechi și dispare când shared_ptr moare la recursie (NetworkServer.cpp:288). Zero eroare, zero răspuns. Asta e direct relevant pentru întrebarea ta inițială. Fix: mută buffer-ul în afara recursiei și consumă liniile rămase înainte de a re-arma citirea.
+- ✅ **Query-uri pipeline-uite** *(rezolvat)* — `struct Session` nou în `NetworkServer.hpp`
+  (`tcp::socket` + `asio::streambuf readBuffer`, ținut prin `shared_ptr<Session>`), creat o
+  singură dată în `acceptConnections` și pasat atât lui `handleHandshake` (care nu mai are
+  `streambuf` local) cât și lui `handleClient` (care nu mai creează buffer la fiecare apel).
+  `async_read_until` consumă întâi ce a rămas în buffer, deci liniile în plus nu se mai pierd.
+  Teste noi în `tests/test_network.cpp` (19: două statement-uri într-un `write`; 20: `AUTH` +
+  query într-un `write`) cu helper `readLineWithTimeout`; ambele picau cu `<timeout>` pe codul vechi.
+  Descrierea originală, pentru context:
+  **Query-uri pipeline-uite se pierd silențios.** handleClient creează un streambuf nou la fiecare apel (NetworkServer.cpp:273). async_read_until citește frecvent dincolo de delimitator, deci dacă clientul trimite CREATE TABLE ...\nINSERT ...\n într-un singur send(), al doilea statement rămâne în buffer-ul vechi și dispare când shared_ptr moare la recursie (NetworkServer.cpp:288). Zero eroare, zero răspuns. Asta e direct relevant pentru întrebarea ta inițială. Fix: mută buffer-ul în afara recursiei și consumă liniile rămase înainte de a re-arma citirea.
 
-- **Excepții care omoară procesul.** run() pornește thread-uri de pool cu io_context.run() gol, fără try/catch (NetworkServer.cpp:171-174). Iar în handler-ul de accept:
+- ✅ **Excepții care omoară procesul** *(rezolvat)* — trei niveluri:
+  (1) toate `asio::write` din `acceptConnections` și `handleHandshake`, plus `remote_endpoint`,
+  folosesc acum overload-ul cu `error_code`; o scriere eșuată = client plecat → conexiunea e
+  abandonată (handshake-ul întoarce `false`), fără excepție. Ternarul cu virgulă de la bypass a
+  devenit `if/else`. (2) `acceptConnections()` se re-armează **la începutul** handler-ului, imediat
+  după verificarea `operation_aborted`, deci niciun `return`/throw de mai jos nu mai rupe lanțul
+  de accept. (3) Plasă de siguranță: `NetworkServer::runWorker()` rulează `io_context.run()` într-o
+  buclă cu `try/catch` (loghează și reia), folosită de toate thread-urile din `run()` — deci nici
+  `std::terminate` din thread-urile pool, nici cel din destructorul `std::thread` ne-join-uit.
+  Test nou în `tests/test_network.cpp` (21: 30 de clienți care închid cu RST în diverse etape ale
+  handshake-ului, apoi un query normal); pe codul vechi dădea `terminate called after throwing
+  ... write: An existing connection was forcibly closed by the remote host`.
+  Descrierea originală, pentru context:
+  **Excepții care omoară procesul.** run() pornește thread-uri de pool cu io_context.run() gol, fără try/catch (NetworkServer.cpp:171-174). Iar în handler-ul de accept:
    •
    socket.remote_endpoint() (:242) aruncă dacă peer-ul s-a deconectat între accept și apel
    •
@@ -147,7 +168,7 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
 
 - **Minore**: rateLimitMap crește nelimitat (o intrare per IP, niciodată curățată); async_read_until pe streambuf fără limită de mărime; comparația auth de la :149 nu e constant-time; stop() apelează acceptor.close() din thread-ul GUI cât timp thread-urile de io folosesc acceptor-ul, ceea ce nu e thread-safe în asio (ar trebui prin asio::post).
 
-### Opțional: să fie configurabil
+### ✅Opțional: să fie configurabil✅
 Dacă vrei switch în config.json în loc de hardcodat:
 
 - **Config/Config.hpp:13** — adaugi bool allow_remote_db_admin = false;

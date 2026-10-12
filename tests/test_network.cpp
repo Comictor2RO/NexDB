@@ -20,6 +20,33 @@ static std::string readLine(tcp::socket &sock, asio::streambuf &buf) {
     return line;
 }
 
+// Like readLine, but gives up after `timeout` and returns "<timeout>" instead of
+// blocking forever. Used by the pipelining tests: before the per-session buffer fix
+// the server dropped the second line, so a plain readLine would hang the suite.
+static std::string readLineWithTimeout(asio::io_context &ctx, tcp::socket &sock, asio::streambuf &buf,
+                                       std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) {
+    asio::error_code result = asio::error::would_block;
+    asio::async_read_until(sock, buf, "\n", [&](asio::error_code ec, std::size_t) { result = ec; });
+    ctx.restart();
+    ctx.run_for(timeout);
+
+    if (result == asio::error::would_block) {
+        // Abort the pending read and let its handler run before `result` goes out of scope
+        sock.close();
+        ctx.restart();
+        ctx.run();
+        return "<timeout>";
+    }
+    if (result)
+        return "<error: " + result.message() + ">";
+
+    std::istream is(&buf);
+    std::string line;
+    std::getline(is, line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    return line;
+}
+
 class NetworkServerTest : public ::testing::Test {
 protected:
     Engine *engine = nullptr;
@@ -420,4 +447,99 @@ TEST_F(NetworkServerTest, AllowFlagLetsRemoteClientsAdministerDatabases) {
     std::remove("test_netadmin.db");
     std::remove("test_netadmin.cat");
     std::remove("test_netadmin.wal");
+}
+
+// --- New tests: pipelined statements ---
+
+// Test 19: two statements in a single write() both get answered, in order.
+// The server's read usually pulls both lines at once; the second one used to be
+// dropped together with a per-call streambuf, leaving the client waiting forever.
+TEST_F(NetworkServerTest, PipelinedQueriesInOneWriteAreAllAnswered) {
+    asio::io_context ctx;
+    tcp::socket sock(ctx);
+    tcp::resolver resolver(ctx);
+    asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(server->getPort())));
+
+    asio::streambuf buf;
+    readLine(sock, buf);                                 // banner
+    std::string challengeLine = readLine(sock, buf);     // CHALLENGE <nonce>
+    std::string nonce = challengeLine.substr(std::string("CHALLENGE ").size());
+
+    std::string authMsg = "AUTH " + picosha2::hash256_hex_string(server->getAuthToken() + nonce) + "\n";
+    asio::write(sock, asio::buffer(authMsg));
+    ASSERT_EQ(readLine(sock, buf), "AUTH OK");
+
+    asio::write(sock, asio::buffer(std::string(
+        "INSERT INTO net_users VALUES (8, Eve)\n"
+        "SELECT * FROM net_users WHERE id = 8\n")));
+
+    EXPECT_EQ(readLineWithTimeout(ctx, sock, buf), "{\"type\": \"ok\"}");
+    std::string rows = readLineWithTimeout(ctx, sock, buf);
+    EXPECT_NE(rows.find("\"type\": \"rows\""), std::string::npos) << rows;
+    EXPECT_NE(rows.find("Eve"), std::string::npos) << rows;
+}
+
+// Test 20: a query sent in the same write() as the AUTH line is not lost.
+// The handshake reads into the session buffer, so whatever follows the AUTH line
+// is still there when handleClient starts reading.
+TEST_F(NetworkServerTest, QuerySentTogetherWithAuthIsAnswered) {
+    asio::io_context ctx;
+    tcp::socket sock(ctx);
+    tcp::resolver resolver(ctx);
+    asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(server->getPort())));
+
+    asio::streambuf buf;
+    readLine(sock, buf);                                 // banner
+    std::string challengeLine = readLine(sock, buf);     // CHALLENGE <nonce>
+    std::string nonce = challengeLine.substr(std::string("CHALLENGE ").size());
+
+    std::string authMsg = "AUTH " + picosha2::hash256_hex_string(server->getAuthToken() + nonce) + "\n";
+    asio::write(sock, asio::buffer(authMsg + "SELECT * FROM net_users WHERE id = 1\n"));
+
+    ASSERT_EQ(readLineWithTimeout(ctx, sock, buf), "AUTH OK");
+    std::string rows = readLineWithTimeout(ctx, sock, buf);
+    EXPECT_NE(rows.find("Alice"), std::string::npos) << rows;
+}
+
+// --- New test: clients that vanish mid-handshake ---
+
+// Test 21: clients that hard-close (RST, via linger 0) at every handshake stage must not
+// take the server down. Before the fix, the server's next write on such a socket threw
+// out of the accept handler and std::terminate killed the whole test binary.
+// The AUTH stage sends the *correct* hash, so the rate limiter never bans 127.0.0.1.
+TEST_F(NetworkServerTest, ServerSurvivesClientsThatDisconnectAbruptly) {
+    for (int i = 0; i < 30; i++) {
+        asio::io_context ctx;
+        tcp::socket sock(ctx);
+        tcp::resolver resolver(ctx);
+        asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(server->getPort())));
+        sock.set_option(asio::socket_base::linger(true, 0));
+
+        asio::streambuf buf;
+        switch (i % 3) {
+            case 0:                                          // gone before the banner
+                break;
+            case 1:                                          // gone after CHALLENGE
+                readLine(sock, buf);
+                readLine(sock, buf);
+                break;
+            case 2: {                                        // gone right after AUTH
+                readLine(sock, buf);
+                std::string challengeLine = readLine(sock, buf);
+                std::string nonce = challengeLine.substr(std::string("CHALLENGE ").size());
+                std::string authMsg = "AUTH " + picosha2::hash256_hex_string(server->getAuthToken() + nonce) + "\n";
+                asio::write(sock, asio::buffer(authMsg));
+                break;
+            }
+        }
+
+        asio::error_code ec;
+        sock.close(ec);
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Still alive and still accepting
+    std::string response = sendQuery("SELECT * FROM net_users");
+    EXPECT_NE(response.find("Alice"), std::string::npos) << response;
 }

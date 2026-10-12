@@ -14,6 +14,7 @@
 #ifndef NOUSER
 #define NOUSER
 #endif
+
 #include <asio.hpp>
 #include <asio/ts/buffer.hpp>
 #include <asio/ts/internet.hpp>
@@ -22,6 +23,7 @@
 #include <map>
 #include <chrono>
 #include <functional>
+#include <memory>
 
 class Engine;
 
@@ -30,6 +32,15 @@ using asio::ip::tcp;
 struct RateLimitEntry {
     int failCount = 0;
     std::chrono::steady_clock::time_point bannedUntil{};
+};
+
+// One per connection. readBuffer must outlive a single read: async_read_until
+// may pull several pipelined lines from the socket at once.
+struct Session {
+    explicit Session(tcp::socket s) : socket(std::move(s)) {}
+
+    tcp::socket socket;
+    asio::streambuf readBuffer;
 };
 
 class NetworkServer {
@@ -64,13 +75,14 @@ class NetworkServer {
         std::mutex rateLimitMutex;
 
         void openServer();
+        void runWorker();
         void acceptConnections();
-        void handleClient(std::shared_ptr<tcp::socket> sharedSocket);
+        void handleClient(std::shared_ptr<Session> sharedSession);
         std::string executeQuery(std::string &query);
 
         void loadOrCreateSecret();
         std::string generateNonce();
-        bool handleHandshake(tcp::socket &socket, const std::string &clientIp);
+        bool handleHandshake(Session &session, const std::string &clientIp);
 };
 
 #endif
