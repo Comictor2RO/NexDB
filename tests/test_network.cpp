@@ -47,6 +47,57 @@ static std::string readLineWithTimeout(asio::io_context &ctx, tcp::socket &sock,
     return line;
 }
 
+// A server on its own engine, for tests that need a non-default handshake timeout.
+// No localhost bypass, so every connection goes through CHALLENGE / AUTH. Declare it
+// in an inner scope and remove its files after the scope ends: the engine must be
+// destroyed first, or the destructor recreates them.
+struct HandshakeTestServer {
+    Engine engine;
+    NetworkServer server;
+    std::thread thread;
+
+    explicit HandshakeTestServer(int handshakeTimeoutSeconds)
+        : engine(128, "test_nethandshake.db", "test_nethandshake.cat", "test_nethandshake.wal"),
+          server(engine, 0, 3, 30, false, 4, false, handshakeTimeoutSeconds) {
+        engine.query("CREATE TABLE hs_users (id INT, name STRING)");
+        engine.query("INSERT INTO hs_users VALUES (1, Alice)");
+        server.prepare();
+        thread = std::thread([this]() { server.run(); });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    ~HandshakeTestServer() {
+        server.stop();
+        thread.join();
+    }
+
+    static void removeFiles() {
+        std::remove("test_nethandshake.db");
+        std::remove("test_nethandshake.cat");
+        std::remove("test_nethandshake.wal");
+    }
+};
+
+// Connects and runs banner + CHALLENGE + AUTH with the correct token, every read bounded
+// by `timeout`. Returns the auth result line ("AUTH OK"), or "<timeout>" / "<error...>".
+static std::string connectAndAuth(asio::io_context &ctx, tcp::socket &sock, asio::streambuf &buf,
+                                  NetworkServer &server,
+                                  std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) {
+    tcp::resolver resolver(ctx);
+    asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(server.getPort())));
+
+    std::string banner = readLineWithTimeout(ctx, sock, buf, timeout);
+    if (banner != NetworkServer::PROTOCOL_VERSION)
+        return banner;
+    std::string challengeLine = readLineWithTimeout(ctx, sock, buf, timeout);
+    if (challengeLine.rfind("CHALLENGE ", 0) != 0)
+        return challengeLine;
+
+    std::string nonce = challengeLine.substr(std::string("CHALLENGE ").size());
+    asio::write(sock, asio::buffer("AUTH " + picosha2::hash256_hex_string(server.getAuthToken() + nonce) + "\n"));
+    return readLineWithTimeout(ctx, sock, buf, timeout);
+}
+
 class NetworkServerTest : public ::testing::Test {
 protected:
     Engine *engine = nullptr;
@@ -542,4 +593,105 @@ TEST_F(NetworkServerTest, ServerSurvivesClientsThatDisconnectAbruptly) {
     // Still alive and still accepting
     std::string response = sendQuery("SELECT * FROM net_users");
     EXPECT_NE(response.find("Alice"), std::string::npos) << response;
+}
+
+// --- New tests: handshake timeout ---
+
+// Test 22: more silent clients than io threads do not freeze the server. The handshake
+// timeout is set far above the read limit, so a pass proves the handshake no longer
+// holds a thread while it waits, not that the timer happened to free one in time.
+// Before the fix every silent client parked an io thread in a synchronous read_until.
+TEST_F(NetworkServerTest, SilentClientsDoNotBlockOtherClients) {
+    {
+        HandshakeTestServer hs(30);
+
+        asio::io_context silentCtx;
+        std::vector<tcp::socket> silent;
+        tcp::resolver resolver(silentCtx);
+        for (int i = 0; i < 6; i++) {                     // 6 > 4 io threads
+            silent.emplace_back(silentCtx);
+            asio::connect(silent.back(), resolver.resolve("127.0.0.1", std::to_string(hs.server.getPort())));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        asio::io_context ctx;
+        tcp::socket sock(ctx);
+        asio::streambuf buf;
+        auto limit = std::chrono::milliseconds(1000);
+        ASSERT_EQ(connectAndAuth(ctx, sock, buf, hs.server, limit), "AUTH OK");
+
+        asio::write(sock, asio::buffer(std::string("SELECT * FROM hs_users\n")));
+        std::string rows = readLineWithTimeout(ctx, sock, buf, limit);
+        EXPECT_NE(rows.find("Alice"), std::string::npos) << rows;
+    }
+    HandshakeTestServer::removeFiles();
+}
+
+// Test 23: a client that never sends AUTH is disconnected once the timeout expires.
+TEST_F(NetworkServerTest, SilentClientIsDisconnectedAfterHandshakeTimeout) {
+    {
+        HandshakeTestServer hs(1);
+
+        asio::io_context ctx;
+        tcp::socket sock(ctx);
+        tcp::resolver resolver(ctx);
+        asio::connect(sock, resolver.resolve("127.0.0.1", std::to_string(hs.server.getPort())));
+
+        asio::streambuf buf;
+        readLine(sock, buf);                                 // banner
+        readLine(sock, buf);                                 // CHALLENGE <nonce>
+
+        auto start = std::chrono::steady_clock::now();
+        std::string line = readLineWithTimeout(ctx, sock, buf, std::chrono::milliseconds(3000));
+        auto elapsed = std::chrono::steady_clock::now() - start;
+
+        // Closed by the server (EOF / reset), not left hanging until our own limit
+        EXPECT_EQ(line.rfind("<error", 0), 0u) << line;
+        // ...and not straight away either: the client did get its full second
+        EXPECT_GE(elapsed, std::chrono::milliseconds(800));
+    }
+    HandshakeTestServer::removeFiles();
+}
+
+// Test 24: the timer is cancelled once AUTH arrives. A client that authenticates and
+// then waits past the timeout must still be served on the same socket.
+TEST_F(NetworkServerTest, AuthenticatedClientOutlivesHandshakeTimeout) {
+    {
+        HandshakeTestServer hs(1);
+
+        asio::io_context ctx;
+        tcp::socket sock(ctx);
+        asio::streambuf buf;
+        ASSERT_EQ(connectAndAuth(ctx, sock, buf, hs.server), "AUTH OK");
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+        asio::write(sock, asio::buffer(std::string("SELECT * FROM hs_users\n")));
+        std::string rows = readLineWithTimeout(ctx, sock, buf);
+        EXPECT_NE(rows.find("Alice"), std::string::npos) << rows;
+    }
+    HandshakeTestServer::removeFiles();
+}
+
+// Test 25: timeouts do not count toward the IP ban. As many silent clients as
+// maxFailures time out, and the next client with the right token still gets in.
+TEST_F(NetworkServerTest, HandshakeTimeoutDoesNotCountTowardBan) {
+    {
+        HandshakeTestServer hs(1);
+
+        asio::io_context silentCtx;
+        std::vector<tcp::socket> silent;
+        tcp::resolver resolver(silentCtx);
+        for (int i = 0; i < 3; i++) {                     // == maxFailures
+            silent.emplace_back(silentCtx);
+            asio::connect(silent.back(), resolver.resolve("127.0.0.1", std::to_string(hs.server.getPort())));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));   // all three time out
+
+        asio::io_context ctx;
+        tcp::socket sock(ctx);
+        asio::streambuf buf;
+        EXPECT_EQ(connectAndAuth(ctx, sock, buf, hs.server), "AUTH OK");
+    }
+    HandshakeTestServer::removeFiles();
 }

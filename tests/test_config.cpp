@@ -27,6 +27,7 @@ TEST_F(ConfigTest, DefaultsWhenFileIsMissing)
     EXPECT_EQ(cfg.cache_capacity,   128);
     EXPECT_EQ(cfg.aux_max_failures, 3);
     EXPECT_EQ(cfg.aux_timeout,      30);
+    EXPECT_EQ(cfg.handshake_timeout, 5);
 
     // A missing config must not hand remote clients CREATE/DROP DATABASE
     EXPECT_FALSE(cfg.allow_remote_db_admin);
@@ -41,6 +42,7 @@ TEST_F(ConfigTest, LoadsAllFields)
   "aux_max_failures": 5,
   "aux_timeout": 60,
   "thread_count": 8,
+  "handshake_timeout": 10,
   "bypass_localhost": false,
   "allow_remote_db_admin": true,
   "database": "otherdb"
@@ -53,6 +55,7 @@ TEST_F(ConfigTest, LoadsAllFields)
     EXPECT_EQ(cfg.aux_max_failures, 5);
     EXPECT_EQ(cfg.aux_timeout,      60);
     EXPECT_EQ(cfg.thread_count,     8);
+    EXPECT_EQ(cfg.handshake_timeout, 10);
     EXPECT_FALSE(cfg.bypass_localhost);
     EXPECT_TRUE(cfg.allow_remote_db_admin);
     EXPECT_EQ(cfg.database,         "otherdb");
@@ -163,6 +166,20 @@ TEST_F(ConfigTest, InvalidAllowRemoteDbAdminThrows)
   "allow_remote_db_admin": "yes"
 })");
 
+    EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
+}
+
+// A zero or negative timeout would close every handshake on arrival
+TEST_F(ConfigTest, NonPositiveHandshakeTimeoutThrows)
+{
+    writeConfig(R"({
+  "handshake_timeout": 0
+})");
+    EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
+
+    writeConfig(R"({
+  "handshake_timeout": -5
+})");
     EXPECT_THROW(Config::load(TEST_CONFIG), std::runtime_error);
 }
 

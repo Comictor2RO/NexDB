@@ -160,7 +160,23 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
    toate asio::write din :244, :247, :122, :132, :153, :163 sunt overload-uri care aruncă asio::system_error
    Orice client care închide socket-ul în timpul handshake-ului aruncă o excepție care iese din handler, iese din run() și, pe un thread de pool, dă std::terminate. Pe thread-ul principal e prinsă în GUI (GUI.cpp:61), dar acceptConnections() nu se mai re-armează niciodată — serverul încetează să accepte conexiuni fără să spună nimic.
 
-- **Comentariul de la linia 134 minte.** Zice "synchronous, with 5s timeout via deadline" — nu există niciun timeout. handleHandshake face I/O blocant sincron pe un thread de io_context, deci o conexiune care nu trimite nimic blochează thread-ul pe termen nelimitat. Cu thread_count: 4, patru conexiuni deschise și mute îngheață tot serverul, inclusiv accept-ul.
+- ✅ **Handshake fără timeout** *(rezolvat)* — `handleHandshake` (sincron, `bool`) a devenit
+  `startHandshake(shared_ptr<Session>, clientIp)`: `CHALLENGE` se scrie tot sincron, dar `AUTH`
+  se citește cu `async_read_until`, deci un client mut nu mai ține niciun thread de io. `Session`
+  are acum un `asio::steady_timer handshakeTimer` (construit pe executorul socket-ului) și un flag
+  `handshakeDone`; la expirare, timer-ul închide socket-ul, iar callback-ul de citire anulează
+  timer-ul pe orice cale (altfel ar închide clienți deja autentificați). Fiecare socket e acceptat
+  pe propriul strand (`async_accept(asio::make_strand(io_context), ...)`), iar handshake-ul pornește
+  prin `asio::dispatch` pe acel strand → handler-ele de citire/scriere/timer ale unei conexiuni nu
+  rulează niciodată în paralel. Decizii: timeout-ul **nu** contează la ban; durata e configurabilă
+  (`handshake_timeout` în `config.json`, default 5, validat > 0, parametru nou în ctor-ul
+  `NetworkServer`, pasat din `GUI.cpp`). README + `docs/CLIENT_PROTOCOL.md` (§1, §2.3, §9) actualizate.
+  Teste noi: `tests/test_network.cpp` 22–25 (clienți muți > thread-uri nu blochează serverul;
+  clientul mut e deconectat după timeout; clientul autentificat supraviețuiește timeout-ului;
+  timeout-ul nu dă ban) + `ConfigTest.NonPositiveHandshakeTimeoutThrows`. Verificate prin mutații:
+  fiecare test pică dacă scoți bucata de fix pe care o păzește.
+  Descrierea originală, pentru context:
+  **Comentariul de la linia 134 minte.** Zice "synchronous, with 5s timeout via deadline" — nu există niciun timeout. handleHandshake face I/O blocant sincron pe un thread de io_context, deci o conexiune care nu trimite nimic blochează thread-ul pe termen nelimitat. Cu thread_count: 4, patru conexiuni deschise și mute îngheață tot serverul, inclusiv accept-ul.
 
 - **Token-ul auth generat nu ajunge niciodată în log.** prepare() e apelat la GUI.cpp:45, dar setLogCallback abia la :51. Toate log-urile din loadOrCreateSecret() — inclusiv "Generated auth token: ..." (NetworkServer.cpp:97) — se duc într-un logCallback gol. Token-ul ajunge doar în server_auth.conf.
 

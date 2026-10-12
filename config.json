@@ -5,6 +5,7 @@
   "aux_max_failures": 3,
   "aux_timeout": 30,
   "thread_count": 4,
+  "handshake_timeout": 5,
   "bypass_localhost": true,
   "allow_remote_db_admin": false,
   "database": "mydb"

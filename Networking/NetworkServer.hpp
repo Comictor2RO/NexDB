@@ -36,16 +36,23 @@ struct RateLimitEntry {
 
 // One per connection. readBuffer must outlive a single read: async_read_until
 // may pull several pipelined lines from the socket at once.
+// The socket is accepted on its own strand, and the timer is built on the socket's
+// executor, so the read handler and the timeout handler never run concurrently.
 struct Session {
-    explicit Session(tcp::socket s) : socket(std::move(s)) {}
+    explicit Session(tcp::socket s)
+        : socket(std::move(s)), handshakeTimer(socket.get_executor()) {}
 
     tcp::socket socket;
     asio::streambuf readBuffer;
+    asio::steady_timer handshakeTimer;
+    // Set once the AUTH line (or a read error) has arrived. A timer that already
+    // expired cannot be cancelled anymore, so its handler checks this instead.
+    bool handshakeDone = false;
 };
 
 class NetworkServer {
     public:
-        NetworkServer(Engine &engine, int port = 0, int maxFailures = 3, int banSeconds = 30, bool bypassLocalhost = true, int numThreads = 4, bool allowRemoteDbAdmin = false);
+        NetworkServer(Engine &engine, int port = 0, int maxFailures = 3, int banSeconds = 30, bool bypassLocalhost = true, int numThreads = 4, bool allowRemoteDbAdmin = false, int handshakeTimeoutSeconds = 5);
 
         static constexpr const char* PROTOCOL_VERSION = "NEXDB/1.0.0";
 
@@ -62,6 +69,7 @@ class NetworkServer {
         int banSeconds;
         bool bypassLocalhost;
         bool allowRemoteDbAdmin;
+        int handshakeTimeoutSeconds;
         size_t port = 0;
         asio::io_context io_context;
         tcp::acceptor acceptor;
@@ -82,7 +90,7 @@ class NetworkServer {
 
         void loadOrCreateSecret();
         std::string generateNonce();
-        bool handleHandshake(Session &session, const std::string &clientIp);
+        void startHandshake(std::shared_ptr<Session> session, const std::string &clientIp);
 };
 
 #endif

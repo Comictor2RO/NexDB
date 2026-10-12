@@ -106,6 +106,8 @@ Config Config::load(const std::string &path)
             config.aux_timeout = parsePositive(key, val);
         else if (key == "thread_count")
             config.thread_count = parsePositive(key, val);
+        else if (key == "handshake_timeout")
+            config.handshake_timeout = parsePositive(key, val);
         else
             throw std::runtime_error("Invalid config key: '" + key + "'");
     }

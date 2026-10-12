@@ -147,6 +147,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
   "aux_max_failures": 3,
   "aux_timeout": 30,
   "thread_count": 4,
+  "handshake_timeout": 5,
   "bypass_localhost": true,
   "allow_remote_db_admin": false,
   "database": "mydb"
@@ -161,6 +162,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
 | `aux_max_failures` | `3` | Failed auth attempts before IP ban |
 | `aux_timeout` | `30` | Ban duration in seconds |
 | `thread_count` | `4` | Number of threads in the ASIO I/O thread pool |
+| `handshake_timeout` | `5` | Seconds a client has to answer `CHALLENGE` with `AUTH` before the server closes the connection. Does not count toward the IP ban |
 | `bypass_localhost` | `true` | Skip the auth handshake for `127.0.0.1` / `::1` connections |
 | `allow_remote_db_admin` | `false` | Let network clients run `CREATE DATABASE` / `DROP DATABASE`. Off by default; the GUI is unaffected either way |
 | `database` | `"mydb"` | Active database name (files stored in `databases/`) |

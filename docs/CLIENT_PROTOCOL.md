@@ -26,9 +26,10 @@ listener is opened when the user presses *Start Server*, which calls
 `NetworkServer::prepare()`. A client that gets `ECONNREFUSED` most likely faces an app
 where nobody pressed the button — worth saying so in the error message.
 
-The server never closes an idle connection and never sends unsolicited data. There is no
-ping, no keepalive, no server-side idle timeout, and no `QUIT` command — closing the
-socket is how a client disconnects.
+Once authenticated, the server never closes an idle connection and never sends unsolicited
+data. There is no ping, no keepalive, no server-side idle timeout, and no `QUIT` command —
+closing the socket is how a client disconnects. The one timeout is during the handshake
+(§2.3).
 
 ### Line endings
 
@@ -85,6 +86,12 @@ S → C:  AUTH OK\n        |  AUTH FAIL\n  |  AUTH BANNED\n
 
 On `AUTH FAIL` and `AUTH BANNED` the server writes the line and drops the connection
 without reading further. Treat both as fatal; do not retry on the same socket.
+
+The `AUTH` line must arrive within `handshake_timeout` seconds (default 5) of the
+`CHALLENGE`. Otherwise the server closes the socket **without sending anything** — the
+client sees EOF where it expected the auth result. A timeout does not count toward the ban
+(§2.5). Compute the hash before connecting, or right after reading `CHALLENGE`; do not
+wait on user input in between.
 
 `AUTH BANNED` is also sent *immediately* — before any `CHALLENGE` — when the IP is
 already banned. So after the banner the second line can be any of `AUTH OK`,
@@ -514,7 +521,8 @@ values, and a mistyped key is never silently ignored.
 | `allow_remote_db_admin` | `false` | bool | whether `CREATE DATABASE` / `DROP DATABASE` are accepted (§7.8) |
 | `aux_max_failures` | 3 | > 0 | failed auths before ban |
 | `aux_timeout` | 30 | > 0 | ban seconds |
-| `thread_count` | 4 | > 0 | accepted concurrent connections (execution still serialized) |
+| `thread_count` | 4 | > 0 | io threads; connections are async, so this does not cap them (execution still serialized) |
+| `handshake_timeout` | 5 | > 0 | seconds to send `AUTH` after `CHALLENGE` before the server closes the socket (§2.3) |
 | `page_size` | 4096 | > 0 | max row size; must match the compiled constant |
 | `cache_capacity` | 128 | > 0 | none |
 | `database` | `mydb` | — | which database is active at startup |

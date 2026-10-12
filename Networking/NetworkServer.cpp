@@ -48,8 +48,8 @@ static std::string jsonEscape(const std::string &s) {
     return out.str();
 }
 
-NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds, bool bypassLocalhost, int numThreads, bool allowRemoteDbAdmin)
-    : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds), bypassLocalhost(bypassLocalhost), numThreads(numThreads), allowRemoteDbAdmin(allowRemoteDbAdmin)
+NetworkServer::NetworkServer(Engine &engine, int port, int maxFailures, int banSeconds, bool bypassLocalhost, int numThreads, bool allowRemoteDbAdmin, int handshakeTimeoutSeconds)
+    : engine(engine), acceptor(io_context), configPort(port), maxFailures(maxFailures), banSeconds(banSeconds), bypassLocalhost(bypassLocalhost), numThreads(numThreads), allowRemoteDbAdmin(allowRemoteDbAdmin), handshakeTimeoutSeconds(handshakeTimeoutSeconds)
 {};
 
 void NetworkServer::prepare()
@@ -108,11 +108,17 @@ std::string NetworkServer::generateNonce()
     return oss.str();
 }
 
-bool NetworkServer::handleHandshake(Session &session, const std::string &clientIp)
+// Runs on the session's strand. Sends CHALLENGE, then waits for the AUTH line
+// asynchronously, so a silent client holds no io thread, and arms a timer that
+// closes the socket if the line does not arrive within handshakeTimeoutSeconds.
+// On success it hands the session to handleClient; on failure the session is
+// simply released and its socket closed when the last handler lets go of it.
+void NetworkServer::startHandshake(std::shared_ptr<Session> session, const std::string &clientIp)
 {
-    tcp::socket &socket = session.socket;
+    tcp::socket &socket = session->socket;
     // All writes below use the error_code overload: a failed write means the client
-    // is gone, which is a failed handshake, not an exception.
+    // is gone, which is a failed handshake, not an exception. They stay synchronous:
+    // a few bytes go straight into the kernel send buffer and do not block.
     asio::error_code ec;
 
     // Check if IP is currently banned
@@ -125,7 +131,8 @@ bool NetworkServer::handleHandshake(Session &session, const std::string &clientI
             if (entry.failCount >= maxFailures && std::chrono::steady_clock::now() < entry.bannedUntil)
             {
                 asio::write(socket, asio::buffer(std::string("AUTH BANNED\n")), ec);
-                return false;
+                if (logCallback) logCallback("[SERVER] Auth failed from: " + clientIp);
+                return;
             }
             if (entry.failCount >= maxFailures && std::chrono::steady_clock::now() >= entry.bannedUntil)
                 entry.failCount = 0;
@@ -135,40 +142,76 @@ bool NetworkServer::handleHandshake(Session &session, const std::string &clientI
     // Send challenge
     std::string nonce = generateNonce();
     asio::write(socket, asio::buffer("CHALLENGE " + nonce + "\n"), ec);
-    if (ec) return false;
+    if (ec) {
+        if (logCallback) logCallback("[SERVER] Client disconnected during handshake: " + clientIp);
+        return;
+    }
 
-    // Read client response (synchronous, with 5s timeout via deadline)
+    // Timeout: closing the socket aborts the pending read below. A timeout is not a
+    // failed auth, so it does not count toward the IP ban.
+    session->handshakeTimer.expires_after(std::chrono::seconds(handshakeTimeoutSeconds));
+    session->handshakeTimer.async_wait([this, session, clientIp](asio::error_code ec) {
+        // Cancelled because the AUTH line arrived, or it arrived just as the timer
+        // expired: either way the handshake is no longer ours to close.
+        if (ec == asio::error::operation_aborted || session->handshakeDone)
+            return;
+        if (logCallback) logCallback("[SERVER] Handshake timed out: " + clientIp);
+        asio::error_code ignored;
+        session->socket.close(ignored);
+    });
+
     // Read into the session buffer: anything the client sent after the AUTH line
     // stays there for handleClient instead of being dropped.
-    asio::read_until(socket, session.readBuffer, "\n", ec);
-    if (ec) return false;
+    asio::async_read_until(socket, session->readBuffer, "\n", [this, session, clientIp, nonce](asio::error_code ec, std::size_t) {
+        // Stop the timer on every path, success or not. Left running, it would close
+        // the socket of a client that has long since authenticated.
+        session->handshakeDone = true;
+        session->handshakeTimer.cancel();
 
-    std::istream is(&session.readBuffer);
-    std::string response;
-    std::getline(is, response);
-    if (!response.empty() && response.back() == '\r') response.pop_back();
+        if (ec) {
+            // operation_aborted means the timer closed the socket and already logged it
+            if (ec != asio::error::operation_aborted && logCallback)
+                logCallback("[SERVER] Client disconnected during handshake: " + clientIp);
+            return;
+        }
 
-    // Verify: client must send "AUTH <SHA256(secret + nonce)>"
-    std::string expectedHash = picosha2::hash256_hex_string(authSecret + nonce);
-    std::string expectedResponse = "AUTH " + expectedHash;
+        std::istream is(&session->readBuffer);
+        std::string response;
+        std::getline(is, response);
+        if (!response.empty() && response.back() == '\r') response.pop_back();
 
-    if (response == expectedResponse)
-    {
-        std::lock_guard<std::mutex> lock(rateLimitMutex);
-        rateLimitMap[clientIp].failCount = 0;
-        asio::write(socket, asio::buffer(std::string("AUTH OK\n")), ec);
-        return !ec;
-    }
-    else
-    {
-        std::lock_guard<std::mutex> lock(rateLimitMutex);
-        auto &entry = rateLimitMap[clientIp];
-        entry.failCount++;
-        if (entry.failCount >= maxFailures)
-            entry.bannedUntil = std::chrono::steady_clock::now() + std::chrono::seconds(banSeconds);
-        asio::write(socket, asio::buffer(std::string("AUTH FAIL\n")), ec);
-        return false;
-    }
+        // Verify: client must send "AUTH <SHA256(secret + nonce)>"
+        std::string expectedHash = picosha2::hash256_hex_string(authSecret + nonce);
+        std::string expectedResponse = "AUTH " + expectedHash;
+
+        asio::error_code writeEc;
+        if (response == expectedResponse)
+        {
+            {
+                std::lock_guard<std::mutex> lock(rateLimitMutex);
+                rateLimitMap[clientIp].failCount = 0;
+            }
+            asio::write(session->socket, asio::buffer(std::string("AUTH OK\n")), writeEc);
+            if (writeEc) {
+                if (logCallback) logCallback("[SERVER] Client disconnected during handshake: " + clientIp);
+                return;
+            }
+            if (logCallback) logCallback("[SERVER] Client authenticated: " + clientIp);
+            handleClient(session);
+        }
+        else
+        {
+            {
+                std::lock_guard<std::mutex> lock(rateLimitMutex);
+                auto &entry = rateLimitMap[clientIp];
+                entry.failCount++;
+                if (entry.failCount >= maxFailures)
+                    entry.bannedUntil = std::chrono::steady_clock::now() + std::chrono::seconds(banSeconds);
+            }
+            asio::write(session->socket, asio::buffer(std::string("AUTH FAIL\n")), writeEc);
+            if (logCallback) logCallback("[SERVER] Auth failed from: " + clientIp);
+        }
+    });
 }
 
 void NetworkServer::run()
@@ -262,7 +305,9 @@ void NetworkServer::openServer()
 // Accepts incoming connections and handles them async
 void NetworkServer::acceptConnections()
 {
-    acceptor.async_accept(io_context, [this](asio::error_code ec, tcp::socket socket) {
+    // Each accepted socket gets its own strand: handlers of one connection (read,
+    // write, handshake timer) are serialized, different connections stay parallel.
+    acceptor.async_accept(asio::make_strand(io_context), [this](asio::error_code ec, tcp::socket socket) {
         // Acceptor was closed by stop(): do not re-arm
         if (ec == asio::error::operation_aborted)
             return;
@@ -294,22 +339,21 @@ void NetworkServer::acceptConnections()
             return;
         }
 
-        bool authed;
         if (bypassLocalhost && (clientIp == "127.0.0.1" || clientIp == "::1")) {
             asio::write(session->socket, asio::buffer(std::string("AUTH OK\n")), ioEc);
-            authed = !ioEc;
-        }
-        else
-            authed = handleHandshake(*session, clientIp);
-
-        if (authed)
-        {
+            if (ioEc) {
+                if (logCallback) logCallback("[SERVER] Client disconnected during handshake: " + clientIp);
+                return;
+            }
             if (logCallback) logCallback("[SERVER] Client authenticated: " + clientIp);
             handleClient(session);
         }
-        else
-        {
-            if (logCallback) logCallback("[SERVER] Auth failed from: " + clientIp);
+        else {
+            // The handshake starts two async operations (read + timer) on the session;
+            // starting them from inside its strand keeps even their setup serialized.
+            asio::dispatch(session->socket.get_executor(), [this, session, clientIp]() {
+                startHandshake(session, clientIp);
+            });
         }
     });
 }
