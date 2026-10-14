@@ -138,6 +138,18 @@ std::vector<Token> Lexer::tokenize()
         {
             tokens.push_back(readNumber());
         }
+        //A sign directly followed by a digit is part of the number: -5 stays -5 instead
+        //of the '-' being dropped as an unknown character. '+' is accepted and discarded,
+        //so +5 is stored as 5 and still compares equal to it
+        else if((currentCharacter == '-' || currentCharacter == '+')
+            && position + 1 < input.length() && isdigit(input[position + 1]))
+        {
+            position++;
+            Token number = readNumber();
+            if(currentCharacter == '-')
+                number.value = "-" + number.value;
+            tokens.push_back(number);
+        }
         else if(currentCharacter == '\'')
         {
             tokens.push_back(readString());

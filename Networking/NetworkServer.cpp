@@ -402,7 +402,13 @@ std::string NetworkServer::executeQuery(std::string &query)
         const std::vector<std::string> &columns = engine.getLastColumns();
 
         if (rows.empty() && columns.empty())
+        {
+            // INSERT / UPDATE / DELETE report how many rows they touched; DDL stays a bare ok
+            std::optional<size_t> affected = engine.getLastAffected();
+            if (affected)
+                return "{\"type\": \"ok\", \"affected\": " + std::to_string(*affected) + "}\n";
             return "{\"type\": \"ok\"}\n";
+        }
 
         std::string result = "{\"type\": \"rows\", \"columns\": [";
         for (size_t i = 0; i < columns.size(); i++) {

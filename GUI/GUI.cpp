@@ -150,6 +150,8 @@ void GUI::executeQuery()
             logs.push_back("[OK] Database dropped.");
         else if (!results.empty())
             logs.push_back("[OK] Rows returned: " + std::to_string(results.size()));
+        else if (std::optional<size_t> affected = engine.getLastAffected())
+            logs.push_back("[OK] Rows affected: " + std::to_string(*affected));
         else
             logs.push_back("[OK] Command executed.");
     }

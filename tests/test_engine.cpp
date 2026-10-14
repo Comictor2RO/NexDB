@@ -322,3 +322,144 @@ TEST_F(EngineTest, NullInFirstIntColumnIsAllowed) {
     ASSERT_EQ(ghost.size(), 1u);
     EXPECT_EQ(ghost[0].values[0], "ghost");
 }
+
+//Test 22: negative numbers keep their sign end to end, through the index and comparisons
+TEST_F(EngineTest, NegativeNumbersKeepTheirSign) {
+    engine->query("CREATE TABLE eng_neg (id INT, temp FLOAT)");
+    engine->query("INSERT INTO eng_neg VALUES (-1, -2.5)");
+    engine->query("INSERT INTO eng_neg VALUES (+2, 3.5)");
+
+    auto rows = engine->query("SELECT * FROM eng_neg");
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].values[0], "-1");
+    EXPECT_EQ(rows[0].values[1], "-2.5");
+    EXPECT_EQ(rows[1].values[0], "2");
+
+    // Index path on the first INT column
+    auto byId = engine->query("SELECT temp FROM eng_neg WHERE id = -1");
+    ASSERT_EQ(byId.size(), 1u);
+    EXPECT_EQ(byId[0].values[0], "-2.5");
+
+    // Used to run as temp > 0.5 and return the wrong row
+    auto below = engine->query("SELECT id FROM eng_neg WHERE temp < -0.5");
+    ASSERT_EQ(below.size(), 1u);
+    EXPECT_EQ(below[0].values[0], "-1");
+}
+
+//Test 23: the INSERT column list places values by name; columns left out get NULL. It used
+//to be ignored, so (name, id) VALUES ('Alice', 1) put 'Alice' into id
+TEST_F(EngineTest, InsertColumnListIsAppliedBySchema) {
+    engine->query("CREATE TABLE eng_cols (id INT, name STRING, age INT)");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_cols (name, id) VALUES ('Alice', 1)"));
+
+    auto rows = engine->query("SELECT * FROM eng_cols");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "1");
+    EXPECT_EQ(rows[0].values[1], "Alice");
+    EXPECT_FALSE(rows[0].values[2].has_value());
+
+    // The indexed lookup sees the reordered key
+    EXPECT_EQ(engine->query("SELECT * FROM eng_cols WHERE id = 1").size(), 1u);
+}
+
+//Test 24: a bad INSERT column list is an error and stores nothing
+TEST_F(EngineTest, InsertColumnListErrors) {
+    engine->query("CREATE TABLE eng_colerr (id INT, name STRING)");
+
+    try {
+        engine->query("INSERT INTO eng_colerr (id, nme) VALUES (1, 'x')");
+        FAIL() << "Expected an unknown column to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Column nme does not exist"), std::string::npos) << e.what();
+    }
+
+    try {
+        engine->query("INSERT INTO eng_colerr (id, id) VALUES (1, 2)");
+        FAIL() << "Expected a repeated column to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("specified more than once"), std::string::npos) << e.what();
+    }
+
+    // Types are checked after reordering: 'x' lands in the INT column
+    EXPECT_THROW(engine->query("INSERT INTO eng_colerr (name, id) VALUES (1, 'x')"), std::runtime_error);
+
+    EXPECT_EQ(engine->query("SELECT * FROM eng_colerr").size(), 0u);
+}
+
+//Test 25: UPDATE with an unknown column, a value of the wrong type, or on a missing table
+//is an error; it used to answer ok and change nothing
+TEST_F(EngineTest, UpdateErrorsAreReported) {
+    engine->query("CREATE TABLE eng_upderr (id INT, age INT)");
+    engine->query("INSERT INTO eng_upderr VALUES (1, 30)");
+
+    try {
+        engine->query("UPDATE eng_upderr SET agee = 31");
+        FAIL() << "Expected an unknown column to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Column agee does not exist"), std::string::npos) << e.what();
+    }
+
+    try {
+        engine->query("UPDATE eng_upderr SET age = 'old'");
+        FAIL() << "Expected a type mismatch to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Type validation failed"), std::string::npos) << e.what();
+    }
+
+    EXPECT_THROW(engine->query("UPDATE eng_nosuchtable SET age = 1"), std::runtime_error);
+
+    // No matching row is not an error, just zero rows affected
+    EXPECT_NO_THROW(engine->query("UPDATE eng_upderr SET age = 5 WHERE id = 999"));
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(0));
+
+    auto rows = engine->query("SELECT age FROM eng_upderr");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "30");
+}
+
+//Test 26: a WHERE on a column that does not exist is an error for SELECT, UPDATE and
+//DELETE, instead of quietly matching nothing
+TEST_F(EngineTest, UnknownWhereColumnIsAnError) {
+    engine->query("CREATE TABLE eng_where (id INT, name STRING)");
+    engine->query("INSERT INTO eng_where VALUES (1, 'Alice')");
+
+    for (const char *sql : {"SELECT * FROM eng_where WHERE nme = 'Alice'",
+                            "UPDATE eng_where SET name = 'Bob' WHERE nme = 'Alice'",
+                            "DELETE FROM eng_where WHERE nme = 'Alice'",
+                            "SELECT * FROM eng_where WHERE nme IS NULL"}) {
+        try {
+            engine->query(sql);
+            FAIL() << "Expected an error for: " << sql;
+        } catch (const std::runtime_error &e) {
+            EXPECT_NE(std::string(e.what()).find("Column nme does not exist"), std::string::npos) << sql;
+        }
+    }
+
+    auto rows = engine->query("SELECT * FROM eng_where");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[1], "Alice");
+}
+
+//Test 27: INSERT, UPDATE and DELETE report how many rows they touched; everything else
+//reports nothing
+TEST_F(EngineTest, AffectedRowCounts) {
+    engine->query("CREATE TABLE eng_aff (id INT, grp STRING)");
+    EXPECT_FALSE(engine->getLastAffected().has_value());
+
+    engine->query("INSERT INTO eng_aff VALUES (1, 'a')");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(1));
+    engine->query("INSERT INTO eng_aff VALUES (2, 'a')");
+    engine->query("INSERT INTO eng_aff VALUES (3, 'b')");
+
+    engine->query("UPDATE eng_aff SET grp = 'c' WHERE grp = 'a'");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(2));
+
+    engine->query("SELECT * FROM eng_aff");
+    EXPECT_FALSE(engine->getLastAffected().has_value());
+
+    engine->query("DELETE FROM eng_aff WHERE id = 999");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(0));
+
+    engine->query("DELETE FROM eng_aff");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(3));
+}

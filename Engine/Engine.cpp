@@ -16,6 +16,30 @@ static bool equalsIgnoreCase(const std::string &a, const std::string &b)
            });
 }
 
+// Index of a column in the schema, or -1
+static int findColumn(const std::vector<Columns> &scheme, const std::string &name)
+{
+    for (int i = 0; i < (int)scheme.size(); i++)
+        if (scheme[i].name == name)
+            return i;
+    return -1;
+}
+
+// Throws the same error the SELECT list uses when a column is not in the table
+static void requireColumn(const std::vector<Columns> &scheme, const std::string &column, const std::string &table)
+{
+    if (findColumn(scheme, column) == -1)
+        throw std::runtime_error("Column " + column + " does not exist in table " + table);
+}
+
+// A WHERE on a misspelled column used to match nothing and succeed, which looks exactly
+// like "no matching rows"
+static void requireConditionColumn(const Condition *cond, const std::vector<Columns> &scheme, const std::string &table)
+{
+    if (cond != nullptr)
+        requireColumn(scheme, cond->column, table);
+}
+
 Engine::Engine(int cacheCapacity,
                const std::string &storagePath,
                const std::string &catalogPath,
@@ -103,6 +127,27 @@ void Engine::executeInsert(const InsertStatement &stmt)
     Row row;
     row.values = stmt.getValues();
 
+    // With a column list, place each value at its schema position; columns left out get
+    // NULL. The parser already checked that the list and the values have the same length.
+    // Only the reordered row reaches the WAL, so recovery can replay it positionally.
+    const std::vector<std::string> columns = stmt.getColumns();
+    if (!columns.empty())
+    {
+        std::vector<Value> ordered(scheme.size(), std::nullopt);
+        std::vector<bool> seen(scheme.size(), false);
+        for (size_t i = 0; i < columns.size(); i++)
+        {
+            int colIndex = findColumn(scheme, columns[i]);
+            if (colIndex == -1)
+                throw std::runtime_error("Column " + columns[i] + " does not exist in table " + stmt.getTable());
+            if (seen[colIndex])
+                throw std::runtime_error("Column " + columns[i] + " specified more than once");
+            seen[colIndex] = true;
+            ordered[colIndex] = row.values[i];
+        }
+        row.values = std::move(ordered);
+    }
+
     if (!inRecovery)
         wal->logInsert(stmt.getTable(), row.values);
 
@@ -131,6 +176,8 @@ void Engine::executeInsert(const InsertStatement &stmt)
         throw std::runtime_error(errorMsg);
     }
 
+    lastAffected = 1;
+
     if (!inRecovery)
         wal->commit();
 }
@@ -140,6 +187,7 @@ std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
     std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
 
+    requireConditionColumn(stmt.getCondition(), scheme, stmt.getTable());
     std::vector<Row> allRows = table.selectRow(stmt.getCondition());
     const std::vector<std::string> &selectedColumns = stmt.getColumns();
 
@@ -181,6 +229,8 @@ void Engine::executeDelete(const DeleteStatement &stmt)
     std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
 
+    requireConditionColumn(stmt.getCondition(), scheme, stmt.getTable());
+
     if (!inRecovery)
     {
         // Log the full new state before touching storage — guarantees recovery
@@ -190,7 +240,7 @@ void Engine::executeDelete(const DeleteStatement &stmt)
             wal->logReplaceRow(stmt.getTable(), row.values);
     }
 
-    table.deleteRow(stmt.getCondition());
+    lastAffected = table.deleteRow(stmt.getCondition());
 
     if (!inRecovery)
         wal->commit();
@@ -200,6 +250,19 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
 {
     std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
+
+    // Validate up front: previewUpdate silently returns nothing for a bad column or value,
+    // which used to reach the client as a plain ok
+    for (const auto &a : stmt.getAssignments())
+    {
+        requireColumn(scheme, a.first, stmt.getTable());
+        const Columns &column = scheme[findColumn(scheme, a.first)];
+        if (!table.validateValueForType(a.second, column.type))
+            throw std::runtime_error("Update failed for table " + stmt.getTable()
+                + ": Type validation failed (invalid value for column " + column.name
+                + " of type " + column.type + ")");
+    }
+    requireConditionColumn(stmt.getCondition(), scheme, stmt.getTable());
 
     if (!inRecovery)
     {
@@ -212,7 +275,7 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
         }
     }
 
-    table.updateRow(stmt.getCondition(), stmt.getAssignments());
+    lastAffected = table.updateRow(stmt.getCondition(), stmt.getAssignments());
 
     if (!inRecovery)
         wal->commit();
@@ -227,6 +290,10 @@ std::string Engine::consumePendingSwitch()
 
 const std::vector<std::string> &Engine::getLastColumns() const {
     return lastColumns;
+}
+
+std::optional<size_t> Engine::getLastAffected() const {
+    return lastAffected;
 }
 
 void Engine::executeCreateDatabase(const CreateDatabaseStatement &stmt)
@@ -285,6 +352,7 @@ std::vector<Row> Engine::query(const std::string &sql, bool allowDatabaseAdmin)
 
     std::vector<Row> results;
     lastColumns.clear();
+    lastAffected.reset();
 
     if (!stmt)
         throw std::runtime_error("Invalid SQL query");
@@ -308,6 +376,12 @@ std::vector<Row> Engine::query(const std::string &sql, bool allowDatabaseAdmin)
     {
         if (!catalog->tableExists(del->getTable()))
             throw std::runtime_error("Table " + del->getTable() + " does not exist");
+        execute(stmt.get());
+    }
+    else if (UpdateStatement *upd = dynamic_cast<UpdateStatement*>(stmt.get()))
+    {
+        if (!catalog->tableExists(upd->getTable()))
+            throw std::runtime_error("Table " + upd->getTable() + " does not exist");
         execute(stmt.get());
     }
     else if (DropStatement *drop = dynamic_cast<DropStatement*>(stmt.get()))

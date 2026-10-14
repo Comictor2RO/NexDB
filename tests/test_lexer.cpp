@@ -165,6 +165,34 @@ TEST(LexerTest, NullIsKeywordQuotedNullIsString) {
     EXPECT_EQ(tokens[3].value, "NULL");
 }
 
+// Test 17: a sign glued to a digit is part of the number. '-' used to be dropped as an
+// unknown character, so VALUES (1, -5) silently stored 5. '+' is accepted and discarded
+TEST(LexerTest, SignedNumbers) {
+    Lexer lexer("-5 +3 -2.5 a != -1");
+    auto tokens = lexer.tokenize();
+    ASSERT_GE(tokens.size(), 6u);
+    EXPECT_EQ(tokens[0].type, TokenType::NUMBER);
+    EXPECT_EQ(tokens[0].value, "-5");
+    EXPECT_EQ(tokens[1].type, TokenType::NUMBER);
+    EXPECT_EQ(tokens[1].value, "3");
+    EXPECT_EQ(tokens[2].type, TokenType::NUMBER);
+    EXPECT_EQ(tokens[2].value, "-2.5");
+    EXPECT_EQ(tokens[3].type, TokenType::IDENTIFIER);
+    EXPECT_EQ(tokens[4].type, TokenType::OPERATOR);
+    EXPECT_EQ(tokens[4].value, "!=");
+    EXPECT_EQ(tokens[5].type, TokenType::NUMBER);
+    EXPECT_EQ(tokens[5].value, "-1");
+}
+
+// Test 18: a sign that is not followed by a digit is still not a number
+TEST(LexerTest, LoneSignIsNotANumber) {
+    Lexer lexer("- 5");
+    auto tokens = lexer.tokenize();
+    ASSERT_GE(tokens.size(), 1u);
+    EXPECT_EQ(tokens[0].type, TokenType::NUMBER);
+    EXPECT_EQ(tokens[0].value, "5");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

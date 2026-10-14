@@ -223,7 +223,8 @@ SELECT * FROM users WHERE age > 18\n
 
 | Case | Response |
 |------|----------|
-| Success, no rows (non-SELECT) | `{"type": "ok"}` |
+| Success, no rows (DDL: CREATE/DROP) | `{"type": "ok"}` |
+| Success, INSERT / UPDATE / DELETE | `{"type": "ok", "affected": <rows touched>}` |
 | Success, with rows | `{"type": "rows", "columns": ["id", "name"], "rows": [["1", "Alice"], ["2", "Bob"]]}` |
 | Database switch (`USE`) | `{"type": "switch", "db": "<dbname>"}` |
 | Error | `{"type": "error", "message": "<message>"}` |
@@ -232,7 +233,8 @@ A `rows` response always carries a `columns` header listing the column names in 
 order as the values in each row — so a client can build `{id: 1, name: "Alice"}` objects
 instead of positional arrays. A `SELECT` that matches no rows still returns a `rows`
 response with the header and an empty `rows` array (`{"type": "rows", "columns": [...], "rows": []}`);
-only non-SELECT commands (INSERT/DELETE/…) return `{"type": "ok"}`.
+only non-SELECT commands (INSERT/DELETE/…) return `ok`. INSERT, UPDATE and DELETE add an
+`affected` row count (`0` when nothing matched); DDL statements do not.
 
 All values are JSON-escaped, so any character — including `|`, newlines, or the literal
 text `END` — is safe inside a value. Clients read one line and parse it with a standard

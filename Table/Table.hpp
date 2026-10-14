@@ -25,14 +25,20 @@ class Table {
 
         std::expected<void, TableError> insertRow(const Row &row);
         std::vector<Row> selectRow(Condition *cond);
-        void deleteRow(Condition *cond);
+        // Both return how many rows were deleted / matched the condition
+        size_t deleteRow(Condition *cond);
         void dropStorage();
-        void updateRow(Condition *cond, const std::vector<std::pair<std::string,Value>> &assignemets);
+        size_t updateRow(Condition *cond, const std::vector<std::pair<std::string,Value>> &assignemets);
 
         // Returns the rows that would remain after the operation, without touching storage.
         // For previewUpdate: returns empty if validation fails or no rows match.
+        // matched, if given, receives the number of rows the condition selected.
         std::vector<Row> previewDelete(Condition *cond);
-        std::vector<Row> previewUpdate(Condition *cond, const std::vector<std::pair<std::string,Value>> &assignments);
+        std::vector<Row> previewUpdate(Condition *cond, const std::vector<std::pair<std::string,Value>> &assignments,
+                                       size_t *matched = nullptr);
+
+        // True if value is acceptable for a column of this type (NULL always is)
+        bool validateValueForType(const Value &value, const std::string &type) const;
 
     private:
         std::string name;
@@ -42,7 +48,6 @@ class Table {
         int nextKey = 0;
 
         int getColumnIndex(const std::string &columnName) const;
-        bool validateValueForType(const Value &value, const std::string &type) const;
         bool validateRowAgainstSchema(const Row &row) const;
 
         void rebuildIndex();

@@ -16,6 +16,7 @@
 #include "../AST/DropDatabaseStatement/DropDatabaseStatement.hpp"
 #include "../AST/UseDatabaseStatement/UseDatabaseStatement.hpp"
 #include <memory>
+#include <optional>
 
 class Engine {
     public:
@@ -34,6 +35,9 @@ class Engine {
 
         const std::vector<std::string> &getLastColumns() const;
 
+        // Rows inserted / updated / deleted by the last query(); empty for any other statement
+        std::optional<size_t> getLastAffected() const;
+
         // Suppress WAL logging during crash recovery replays
         void setRecoveryMode(bool mode) { inRecovery = mode; }
 
@@ -46,6 +50,7 @@ class Engine {
         std::string pendingSwitch;
         std::string currentDatabase;
         std::vector<std::string> lastColumns;
+        std::optional<size_t> lastAffected;
 
         void executeCreate(const CreateStatement &statement);
         void executeInsert(const InsertStatement &statement);

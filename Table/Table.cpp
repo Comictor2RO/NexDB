@@ -255,8 +255,11 @@ std::vector<Row> Table::previewDelete(Condition *cond)
 }
 
 std::vector<Row> Table::previewUpdate(Condition *cond,
-    const std::vector<std::pair<std::string, Value>> &assignments)
+    const std::vector<std::pair<std::string, Value>> &assignments, size_t *matched)
 {
+    if (matched)
+        *matched = 0;
+
     for (const auto &a : assignments)
     {
         int colIndex = getColumnIndex(a.first);
@@ -265,7 +268,7 @@ std::vector<Row> Table::previewUpdate(Condition *cond,
     }
 
     std::vector<Row> allRows = selectRow(nullptr);
-    bool updatedAny = false;
+    size_t updatedCount = 0;
 
     for (auto &row : allRows)
     {
@@ -279,15 +282,18 @@ std::vector<Row> Table::previewUpdate(Condition *cond,
                 return {};
             row.values[colIndex] = a.second;
         }
-        updatedAny = true;
+        updatedCount++;
     }
 
-    if (!updatedAny) return {};
+    if (matched)
+        *matched = updatedCount;
+    if (updatedCount == 0) return {};
     return allRows;
 }
 
-void Table::deleteRow(Condition *cond)
+size_t Table::deleteRow(Condition *cond)
 {
+    size_t before = pageManager.getAllRows().size();
     std::vector<Row> toKeep = previewDelete(cond);
 
     pageManager.clearAll();
@@ -296,13 +302,15 @@ void Table::deleteRow(Condition *cond)
 
     for (const auto &row : toKeep)
         insertRow(row);
+    return before - toKeep.size();
 }
 
-void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, Value>> &assignmets)
+size_t Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, Value>> &assignmets)
 {
-    std::vector<Row> newState = previewUpdate(cond, assignmets);
+    size_t matched = 0;
+    std::vector<Row> newState = previewUpdate(cond, assignmets, &matched);
     if (newState.empty())
-        return;
+        return 0;
 
     pageManager.clearAll();
     index.clear();
@@ -310,6 +318,7 @@ void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, 
 
     for (const auto &row : newState)
         insertRow(row);
+    return matched;
 }
 
 void Table::dropStorage()

@@ -164,6 +164,9 @@ std::vector<WALEntry> WALManager::readLog()
         entry.committed = (parts.back() == "1");
         entries.push_back(entry);
     }
+    // Reading to EOF leaves eofbit/failbit set, which would make every later write fail
+    // silently: the first statement after startup used to be missing from the WAL
+    file.clear();
     return entries;
 }
 
@@ -187,8 +190,14 @@ static void replaySQL(const std::string &sql, Engine &engine)
         return;
     }
     std::unique_ptr<Statement> stmt = std::move(result.value());
-    if (stmt)
-        engine.execute(stmt.get());
+    // A statement that fails on replay (e.g. a WHERE on a column that no longer exists) is
+    // logged and skipped, like a parse error, instead of aborting the Engine constructor
+    try {
+        if (stmt)
+            engine.execute(stmt.get());
+    } catch (const std::exception &e) {
+        std::cerr << "WAL replay error: " << e.what() << std::endl;
+    }
 }
 
 void WALManager::recover(Engine &engine)

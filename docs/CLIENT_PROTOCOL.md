@@ -157,13 +157,14 @@ Every response is **exactly one line of JSON** terminated by `\n`. Four shapes, 
 
 | `type` | Emitted for | Payload |
 |---|---|---|
-| `ok` | INSERT, UPDATE, DELETE, CREATE TABLE, DROP TABLE | — |
+| `ok` | INSERT, UPDATE, DELETE, CREATE TABLE, DROP TABLE | `affected` (INSERT/UPDATE/DELETE only) |
 | `rows` | SELECT (including a SELECT matching nothing) | `columns`, `rows` |
 | `switch` | USE / USE DATABASE | `db` |
 | `error` | any failure | `message` |
 
 ```json
 {"type": "ok"}
+{"type": "ok", "affected": 2}
 {"type": "rows", "columns": ["id", "name"], "rows": [["1", "Alice"], ["2", "Bob"]]}
 {"type": "switch", "db": "myproject"}
 {"type": "error", "message": "Table users does not exist"}
@@ -174,7 +175,12 @@ Rules that matter when writing the parser:
 - **`rows` and `columns` are always both present** on a `rows` response. An empty result
   is `{"type": "rows", "columns": [...], "rows": []}` — the header survives, so a client
   can still report column names for a zero-row SELECT. Only non-SELECT statements collapse
-  to `{"type": "ok"}`.
+  to `ok`.
+- **`affected` is the row count of INSERT, UPDATE and DELETE.** INSERT is always `1`,
+  UPDATE counts the rows the `WHERE` matched, DELETE the rows removed. `0` is a normal
+  success (nothing matched), not an error. DDL (`CREATE TABLE`, `DROP TABLE`,
+  `CREATE/DROP DATABASE`) answers a bare `{"type": "ok"}` with no `affected` field, so
+  treat the field as optional.
 - **Column order matches value order** in every row, so `dict(zip(columns, row))` is
   always correct. For `SELECT *` the order is the schema's declaration order; for an
   explicit list it is the order the user asked for.
@@ -278,21 +284,19 @@ The encoding is internal — values round-trip, so a client never sees percent-e
 - Identifiers match `[A-Za-z][A-Za-z0-9_]*` — they must start with a letter.
 - Strings use **single quotes**, with `''` as the escape for a literal `'`:
   `'don''t'` stores `don't`. Double quotes are not string delimiters.
-- Numbers are digits with at most one `.`.
-- **Every unrecognized character is silently dropped.** This is the sharpest edge in the
-  whole grammar, because it turns typos into wrong data instead of errors:
+- Numbers are digits with at most one `.`, optionally preceded by a sign **written directly
+  against the first digit**: `-5` and `-2.5` keep their sign; `+5` is accepted and stored as
+  `5`. A sign separated by a space (`- 5`) is not part of the number (see below).
+- **Every other unrecognized character is silently dropped**, which can turn typos into
+  wrong data instead of errors:
 
   | Input | Actually executed | Effect |
   |---|---|---|
-  | `VALUES (1, -5)` | `VALUES (1, 5)` | **the minus sign is discarded** |
+  | `VALUES (1, - 5)` | `VALUES (1, 5)` | a sign with a space after it is discarded |
   | `VALUES (1, "Alice")` | `VALUES (1, Alice)` | quotes vanish, works by accident |
-  | `WHERE price > -0.5` | `WHERE price > 0.5` | silently wrong result set |
   | `SELECT * FROM t;` | `SELECT * FROM t` | harmless |
 
-  **Negative numbers cannot currently be written into a query.** A client cannot work
-  around this at the protocol level — either the lexer gains a `-` case, or the client
-  documents that negative literals are unsupported and rejects them up front rather than
-  letting the server store the wrong sign.
+  A client that formats numbers itself never produces the first case: `str(-5)` is `-5`.
 
 ### 6.2 Grammar
 
@@ -324,17 +328,20 @@ parameter placeholders.
 
 The absence of placeholders is worth calling out in the client's README: since values are
 interpolated into a text query, a client that offers a convenience `insert(table, dict)`
-helper owns the escaping (double every `'`, reject `\n`, reject `-`).
+helper owns the escaping (double every `'`, reject `\n`).
 
-### 6.4 The INSERT column list is parsed and then ignored
+### 6.4 The INSERT column list
 
-`INSERT INTO users (name, id) VALUES ('Alice', 1)` parses fine — the parser only checks
-that the count matches — but `Engine::executeInsert` does `row.values = stmt.getValues()`
-and never looks at the column names. Values are always applied **positionally, in schema
-order**. So that statement writes `name = 'Alice'` into the `id` column.
+`INSERT INTO users (name, id) VALUES ('Alice', 1)` places each value in the column it is
+named for, so the order of the list does not matter. Columns of the table that the list
+leaves out are set to **NULL**. Errors:
 
-A client should either omit the feature or reorder the values itself against a cached
-schema before sending.
+- a column that is not in the table → `Column <name> does not exist in table <table>`
+- the same column listed twice → `Column <name> specified more than once`
+- a list and a value list of different lengths → `Column count does not match value count`
+
+Types are validated after the values are placed, against the column each one lands in.
+Without a column list, values are positional in schema order, as before.
 
 ---
 
@@ -353,12 +360,11 @@ schema before sending.
 A non-numeric operand in an ordering comparison throws inside `stod`, is caught, and the
 row simply does not match.
 
-### 7.2 An unknown column in WHERE is not an error
+### 7.2 An unknown column is an error everywhere
 
-If the condition names a column that does not exist, `evaluateCondition` returns false for
-every row and the query succeeds with zero results. A typo in a `WHERE` clause is
-indistinguishable from "no matching rows". Only the **SELECT list** validates column names
-(`Column X does not exist in table Y`).
+A `WHERE` on a column that does not exist is an error for `SELECT`, `UPDATE` and `DELETE`
+(`Column X does not exist in table Y`), the same error the SELECT list, the `SET` list and
+the INSERT column list give. A typo is never mistaken for "no matching rows".
 
 ### 7.3 Equality on the first INT column returns at most one row
 
@@ -369,18 +375,15 @@ equality query but **both** for `SELECT *` or for the same filter expressed as `
 
 Treat the first INT column as an unenforced primary key and document it.
 
-### 7.4 UPDATE fails silently
+### 7.4 UPDATE reports what it did
 
-`previewUpdate` returns an empty vector — and `updateRow` then does nothing — when:
+- An assignment to a column that does not exist → `Column X does not exist in table Y`.
+- A value that fails type validation → `Update failed for table T: Type validation failed
+  (invalid value for column C of type INT)`.
+- `UPDATE` on a table that does not exist → `Table T does not exist`.
+- No row matching the condition is **not** an error: `{"type": "ok", "affected": 0}`.
 
-- no row matches the condition,
-- an assignment names a column that does not exist,
-- an assigned value fails type validation.
-
-All three return `{"type": "ok"}`. The client cannot distinguish "updated 12 rows" from
-"the column name was misspelled". There is no affected-row count anywhere in the protocol;
-do not invent a `rowcount` that always reads 0. If confirmation matters, follow the UPDATE
-with a SELECT.
+Map `affected` to the client's `rowcount`.
 
 ### 7.5 CREATE TABLE on an existing table is an error
 
@@ -563,12 +566,12 @@ Worth surfacing in the client's own docs, because they will surprise users:
 - [ ] Values always come back as strings, except SQL NULL which is JSON `null`
 - [ ] Booleans must be sent as `true`/`false`, never Python's `True`
 - [ ] `NULL` is distinct from `'NULL'`; use `IS NULL`, since `= NULL` matches nothing
-- [ ] Negative numbers are silently stripped of their sign by the lexer
-- [ ] The `INSERT` column list is ignored — values are positional
+- [ ] A sign must touch the digit: `-5` works, `- 5` silently becomes `5`
+- [ ] The `INSERT` column list is honoured; omitted columns become NULL
 - [ ] `USE` affects every connected client
 - [ ] `CREATE DATABASE` / `DROP DATABASE` are refused by the server, not only by the client —
       and the GUI can still run them, so databases move under you
-- [ ] `UPDATE` reports success even when it changed nothing
+- [ ] `affected` is present only for INSERT/UPDATE/DELETE, and `0` is a success
 - [ ] One condition per `WHERE`, no `AND`/`OR`, no `ORDER BY`/`LIMIT`
 
 ### A mock server is enough to test all of it

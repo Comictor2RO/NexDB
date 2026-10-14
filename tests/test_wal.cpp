@@ -304,3 +304,69 @@ TEST_F(WALRecoveryTest, RecoverDeleteWhereIsNull) {
     ASSERT_EQ(rows.size(), 1u);
     EXPECT_EQ(rows[0].values[0], "2");
 }
+
+//Test 14: an INSERT with a column list is logged already in schema order, so the
+//positional replay puts every value back in the right column
+TEST_F(WALRecoveryTest, InsertWithColumnListIsLoggedInSchemaOrder) {
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_cols (id INT, name STRING, age INT)");
+        engine.query("INSERT INTO wal_cols (name, id) VALUES ('Alice', 1)");
+    }
+
+    std::ifstream file(walFile);
+    std::string line, content;
+    bool found = false;
+    while (std::getline(file, line))
+    {
+        content += line + "\n";
+        if (line == "INSERT|wal_cols|1|Alice|%N|0")
+            found = true;
+    }
+    EXPECT_TRUE(found) << "reordered INSERT not found in the WAL:\n" << content;
+}
+
+//Test 15: a logged statement that fails on replay is skipped with a message instead of
+//making the Engine constructor throw
+TEST_F(WALRecoveryTest, FailingReplayDoesNotAbortRecovery) {
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_bad (id INT, name STRING)");
+        engine.query("INSERT INTO wal_bad VALUES (1, 'Alice')");
+    }
+    std::remove(walFile.c_str());
+
+    {
+        WALManager wal(walFile);
+        Condition cond;
+        cond.column = "nosuch";
+        cond.op     = "=";
+        cond.value  = "1";
+        wal.logDelete("wal_bad", &cond);
+    }
+
+    std::unique_ptr<Engine> engine;
+    ASSERT_NO_THROW(engine = std::make_unique<Engine>(128, dbFile, catFile, walFile));
+    EXPECT_EQ(engine->query("SELECT * FROM wal_bad").size(), 1u);
+}
+
+//Test 16: the very first statement after the Engine starts reaches the WAL. readLog used
+//to leave the stream in a failed state after reading to EOF, so that write was dropped
+TEST_F(WALRecoveryTest, FirstStatementAfterStartupIsLogged) {
+    {
+        Engine setup(128, dbFile, catFile, walFile);
+        setup.query("CREATE TABLE wal_first (id INT)");
+    }
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("INSERT INTO wal_first VALUES (1)");
+    }
+
+    std::ifstream file(walFile);
+    std::string line;
+    bool found = false;
+    while (std::getline(file, line))
+        if (line == "INSERT|wal_first|1|0")
+            found = true;
+    EXPECT_TRUE(found);
+}

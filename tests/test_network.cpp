@@ -235,7 +235,7 @@ TEST_F(NetworkServerTest, SelectAllReturnsRows) {
 // Test 2: INSERT returneaza OK
 TEST_F(NetworkServerTest, InsertReturnsOK) {
     std::string response = sendQuery("INSERT INTO net_users VALUES (3, Charlie)");
-    EXPECT_EQ(response, "{\"type\": \"ok\"}\n");
+    EXPECT_EQ(response, "{\"type\": \"ok\", \"affected\": 1}\n");
 }
 
 // Test 3: SELECT cu WHERE returneaza doar row-ul corect
@@ -254,7 +254,7 @@ TEST_F(NetworkServerTest, InvalidQueryReturnsError) {
 // Test 5: DELETE returns OK and row disappears
 TEST_F(NetworkServerTest, DeleteReturnsOK) {
     std::string response = sendQuery("DELETE FROM net_users WHERE id = 1");
-    EXPECT_EQ(response, "{\"type\": \"ok\"}\n");
+    EXPECT_EQ(response, "{\"type\": \"ok\", \"affected\": 1}\n");
 
     std::string selectResponse = sendQuery("SELECT * FROM net_users");
     EXPECT_EQ(selectResponse.find("Alice"), std::string::npos);
@@ -354,7 +354,7 @@ TEST_F(NetworkServerTest, AuthTokenIsNonEmpty) {
 
 // Test 12: OK / rows / error responses are valid single-line JSON objects
 TEST_F(NetworkServerTest, ResponsesAreJsonObjects) {
-    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (5, Dave)"), "{\"type\": \"ok\"}\n");
+    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (5, Dave)"), "{\"type\": \"ok\", \"affected\": 1}\n");
 
     std::string rows = sendQuery("SELECT * FROM net_users WHERE id = 5");
     EXPECT_NE(rows.find("\"type\": \"rows\""), std::string::npos);
@@ -525,7 +525,7 @@ TEST_F(NetworkServerTest, PipelinedQueriesInOneWriteAreAllAnswered) {
         "INSERT INTO net_users VALUES (8, Eve)\n"
         "SELECT * FROM net_users WHERE id = 8\n")));
 
-    EXPECT_EQ(readLineWithTimeout(ctx, sock, buf), "{\"type\": \"ok\"}");
+    EXPECT_EQ(readLineWithTimeout(ctx, sock, buf), "{\"type\": \"ok\", \"affected\": 1}");
     std::string rows = readLineWithTimeout(ctx, sock, buf);
     EXPECT_NE(rows.find("\"type\": \"rows\""), std::string::npos) << rows;
     EXPECT_NE(rows.find("Eve"), std::string::npos) << rows;
@@ -616,14 +616,39 @@ TEST_F(NetworkServerTest, CreateExistingTableReturnsError) {
 // Test 27: SQL NULL is a bare JSON null, while the string 'NULL' stays the JSON string
 // "NULL". Before, both came back as "NULL" and a client could not tell them apart
 TEST_F(NetworkServerTest, NullIsJsonNullOnTheWire) {
-    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (8, NULL)"), "{\"type\": \"ok\"}\n");
-    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (9, 'NULL')"), "{\"type\": \"ok\"}\n");
+    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (8, NULL)"), "{\"type\": \"ok\", \"affected\": 1}\n");
+    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (9, 'NULL')"), "{\"type\": \"ok\", \"affected\": 1}\n");
 
     std::string r1 = sendQuery("SELECT * FROM net_users WHERE id = 8");
     EXPECT_NE(r1.find("[\"8\",null]"), std::string::npos) << r1;
 
     std::string r2 = sendQuery("SELECT * FROM net_users WHERE id = 9");
     EXPECT_NE(r2.find("[\"9\",\"NULL\"]"), std::string::npos) << r2;
+}
+
+// --- New test: affected row counts on the wire ---
+
+// Test 28: INSERT/UPDATE/DELETE answer {"type": "ok", "affected": N}, DDL stays a bare ok,
+// and a misspelled UPDATE column is an error frame instead of a silent ok
+TEST_F(NetworkServerTest, DmlReportsAffectedRows) {
+    EXPECT_EQ(sendQuery("UPDATE net_users SET name = 'Al' WHERE id = 1"),
+              "{\"type\": \"ok\", \"affected\": 1}\n");
+    EXPECT_EQ(sendQuery("UPDATE net_users SET name = 'Nobody' WHERE id = 999"),
+              "{\"type\": \"ok\", \"affected\": 0}\n");
+
+    std::string err = sendQuery("UPDATE net_users SET nme = 'x'");
+    EXPECT_NE(err.find("\"type\": \"error\""), std::string::npos) << err;
+    EXPECT_NE(err.find("Column nme does not exist"), std::string::npos) << err;
+
+    EXPECT_EQ(sendQuery("CREATE TABLE net_affected (id INT)"), "{\"type\": \"ok\"}\n");
+
+    std::string all = sendQuery("SELECT * FROM net_users");
+    size_t rowCount = 0;
+    for (size_t pos = all.find("[\""); pos != std::string::npos; pos = all.find("[\"", pos + 1))
+        rowCount++;
+    // the first match is the columns header, not a row
+    EXPECT_EQ(sendQuery("DELETE FROM net_users"),
+              "{\"type\": \"ok\", \"affected\": " + std::to_string(rowCount - 1) + "}\n");
 }
 
 // --- New tests: handshake timeout ---

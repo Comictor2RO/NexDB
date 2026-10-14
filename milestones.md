@@ -177,6 +177,42 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
   storage, sărit la validare, comparații în WHERE, și `null` în JSON-ul de pe fir (deci atinge
   și protocolul — mai bine înainte de pachete).
 
+### Bug-uri care strică datele în tăcere (rezolvate înainte de pachete)
+Erau documentate în `CLIENT_PROTOCOL.md` ca ciudățenii de ocolit în client; reparate acum ca
+pachetele să nu construiască workaround-uri în jurul lor.
+
+- ✅ **Numerele negative își pierdeau semnul** — `Lexer::tokenize` arunca `-` ca necunoscut, deci
+  `VALUES (1, -5)` stoca `5` și `WHERE price > -0.5` rula ca `> 0.5`. Acum `-`/`+` lipit de o cifră
+  face parte din număr (`+5` se stochează `5`, ca să compare egal cu `5`). `- 5` cu spațiu rămâne
+  ignorat (decizie: doar semnul, restul caracterelor necunoscute tot se aruncă).
+  Teste: `LexerTest` 17–18, `EngineTest.NegativeNumbersKeepTheirSign`.
+- ✅ **Lista de coloane de la INSERT era ignorată** — `INSERT INTO users (name, id) VALUES ('Alice', 1)`
+  punea `'Alice'` în `id`. `Engine::executeInsert` așază acum valorile după schemă; coloanele lipsă
+  primesc NULL; coloană necunoscută / repetată → eroare. WAL-ul primește rândul deja reordonat, deci
+  replay-ul pozițional rămâne corect. Teste: `EngineTest.InsertColumnListIsAppliedBySchema`,
+  `InsertColumnListErrors`, `WALRecoveryTest.InsertWithColumnListIsLoggedInSchemaOrder`.
+- ✅ **UPDATE eșua în tăcere** — coloană necunoscută sau valoare de tip greșit dădeau `{"type":"ok"}`.
+  `Engine::executeUpdate` validează acum înainte (aceleași mesaje ca SELECT/INSERT), iar `query()`
+  verifică și existența tabelului pentru UPDATE (lipsea). Nou pe fir: `{"type":"ok","affected":N}`
+  pentru INSERT/UPDATE/DELETE (`Engine::getLastAffected()`, `Table::deleteRow`/`updateRow` întorc
+  numărul); DDL rămâne `{"type":"ok"}`. GUI loghează `Rows affected: N`. Câmp adăugat, deci
+  `PROTOCOL_VERSION` rămâne `1.0.0`. Teste: `EngineTest.UpdateErrorsAreReported`, `AffectedRowCounts`,
+  `NetworkServerTest.DmlReportsAffectedRows` (28); testele de rețea care așteptau `ok` exact la DML
+  au fost actualizate.
+- ✅ **Coloană necunoscută în WHERE nu dădea eroare** — arăta ca „0 rânduri". Acum
+  `Column X does not exist in table Y` la SELECT/UPDATE/DELETE (`requireConditionColumn` în Engine).
+  Test: `EngineTest.UnknownWhereColumnIsAnError`.
+- ✅ **Bonus — primul statement după pornire lipsea din WAL** — `WALManager::readLog` citea până la EOF
+  fără `file.clear()`, deci stream-ul rămânea în `failbit` și prima scriere se pierdea până la primul
+  `commit()`. Datele ajungeau pe disc, dar acel statement nu era protejat la crash. Găsit când testul
+  pentru INSERT cu listă de coloane a găsit WAL-ul gol. Test: `WALRecoveryTest.FirstStatementAfterStartupIsLogged`.
+- ✅ **Bonus — un replay WAL care eșuează nu mai oprește engine-ul** — `replaySQL` prinde excepțiile din
+  `execute` și le loghează (`WAL replay error: ...`), la fel ca erorile de parsare; înainte, constructorul
+  `Engine` arunca. Test: `WALRecoveryTest.FailingReplayDoesNotAbortRecovery`.
+
+Toate verificate prin mutații (fiecare fix dezactivat → testele lui pică). Docs: `CLIENT_PROTOCOL.md`
+§4, §6.1, §6.3, §6.4, §7.2, §7.4, §10; README (formate de răspuns).
+
 ### Bug-uri adevărate în NetworkServer.cpp
    Fiindcă tot revii la fișierul ăsta — astea sunt problemele reale din el:
    
