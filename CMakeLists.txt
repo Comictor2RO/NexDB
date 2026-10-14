@@ -116,6 +116,10 @@ add_executable(NexDB
         AST/UseDatabaseStatement/UseDatabaseStatement.cpp
         AST/UseDatabaseStatement/UseDatabaseStatement.hpp
         GUI/Colors.hpp
+        GUI/TextEditor.hpp
+        GUI/TextEditor.cpp
+        GUI/Platform.hpp
+        GUI/Platform.cpp
         Networking/NetworkServer.cpp
         Networking/NetworkServer.hpp
         Config/Config.cpp

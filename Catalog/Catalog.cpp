@@ -38,6 +38,15 @@ void Catalog::dropTable(const std::string &name)
     save();
 }
 
+std::vector<std::string> Catalog::getTableNames() const
+{
+    std::shared_lock lock(mutex);
+    std::vector<std::string> names;
+    for (const auto &p : columns)
+        names.push_back(p.first);
+    return names;
+}
+
 std::vector<Columns> Catalog::getColumns(const std::string &name) const
 {
     std::shared_lock lock(mutex);

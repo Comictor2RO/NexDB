@@ -58,6 +58,11 @@ Catalog& Engine::getCatalog()
     return *catalog;
 }
 
+std::string Engine::getCurrentDatabase() const
+{
+    return currentDatabase;
+}
+
 void Engine::switchDatabase(const std::string &storagePath,
                             const std::string &catalogPath,
                             const std::string &walPath)

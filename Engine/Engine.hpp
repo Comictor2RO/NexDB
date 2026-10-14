@@ -29,6 +29,7 @@ class Engine {
         std::vector<Row> query(const std::string &sql, bool allowDatabaseAdmin = true);
 
         Catalog& getCatalog();
+        std::string getCurrentDatabase() const;
 
         // Returns pending database switch name (empty if none), then clears it
         std::string consumePendingSwitch();

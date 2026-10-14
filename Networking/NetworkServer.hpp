@@ -63,6 +63,10 @@ class NetworkServer {
         std::string getAuthToken() const;
         void setLogCallback(std::function<void(const std::string&)> callback);
 
+        // The lock every network query holds while it runs. The GUI takes it too, so local
+        // and remote queries never use the engine at the same time.
+        std::mutex &getEngineMutex() { return engineMutex; }
+
     private:
         int configPort;
         int maxFailures;

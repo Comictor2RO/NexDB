@@ -85,7 +85,39 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
 
 ## 🟢 P3 — Polish & UX (prioritate joasă)
 
-- [ ] Custom title bar în GUI (undecorated window, drag, hover, flat UI)
+- [x] ✅ **GUI în stil VS Code + custom title bar** *(rezolvat)*
+  - **Fereastra** e undecorated (`FLAG_WINDOW_UNDECORATED`), cu bara de titlu desenată de noi:
+    drag, dublu-click = maximize/restore, butoane minimize / maximize-restore / close (close roșu
+    la hover), resize din margini și colțuri (GLFW nu dă margini native unei ferestre undecorated).
+    Drag-ul folosește poziția cursorului pe ecran (`Platform::getCursorScreenPos`), pentru că
+    poziția relativă a mouse-ului rămâne în urmă cât timp fereastra se mișcă. Maximize umple
+    work area-ul monitorului (`Platform::getWorkArea`), deci nu acoperă taskbar-ul; un drag pe
+    fereastra maximizată o restaurează sub cursor, ca în Windows.
+  - **Explorer (stânga):** toate bazele din `databases/` → tabele → coloane cu tipul lor, baza
+    activă evidențiată. Chevron = expand; click pe altă bază = `USE`; click pe tabel = `SELECT *`
+    (cu `USE` înainte dacă e în altă bază). Refresh după fiecare query reușit, la 2 s (cu
+    `try_lock`, ca un query lung de pe rețea să nu blocheze un frame) și din buton.
+  - **Panoul central** (rotunjit, 3 secțiuni):
+    - Results: grid cu coloane aliniate, header fix, coloană `#`, scroll vertical + orizontal
+      (Shift+rotiță), NULL italic și estompat ca să nu semene cu `'NULL'`, număr de rânduri și
+      timp de execuție în header.
+    - Query: `GUI/TextEditor` — multi-linie, numere de linie, highlight SQL, selecție cu mouse și
+      Shift, Ctrl+A/C/X/V, undo/redo, istoric Ctrl+Sus/Jos. Ctrl+Enter / F5 / Run rulează
+      selecția sau tot textul; `;` separă statement-urile, care rulează pe rând și se opresc la
+      prima eroare. Textul rămâne în editor după rulare (alegere, se poate schimba).
+    - Log: culori pe tip de mesaj, timp de execuție, buton Clear.
+  - **Panoul din dreapta:** rezervat pentru viitor.
+  - **Status bar:** stare server + port (click = start/stop), baza activă, Ln/Col, temă (click =
+    dark/light).
+  - Panourile laterale se închid / deschid din title bar sau cu Ctrl+B / Ctrl+Alt+B, cu animație;
+    panoul central se adaptează. Toate marginile (lățimi laterale, split-urile Results / Query /
+    Log) se trag cu mouse-ul.
+  - Fișiere noi: `GUI/TextEditor.*`, `GUI/Platform.*` (`windows.h` stă separat, nu se poate include
+    lângă `raylib.h`). `GUI/Colors.hpp` e acum un `struct Theme` (dark / light) cu paleta veche.
+    Fonturile încarcă și diacriticele românești. Accesori noi: `Catalog::getTableNames()`,
+    `Engine::getCurrentDatabase()`, `NetworkServer::getEngineMutex()`.
+  - Limitări: Win+săgeți și snap-ul la marginea ecranului nu merg (fereastră fără bară nativă);
+    screenshot-urile din README arată încă layout-ul vechi. GUI-ul nu e acoperit de suita de teste.
 - [ ] Compatibilitate wire cu psql / pgAdmin / MySQL Workbench (irelevant pentru local-only)
 - [ ] TLS (irelevant pentru local-only)
 
@@ -213,6 +245,20 @@ pachetele să nu construiască workaround-uri în jurul lor.
 Toate verificate prin mutații (fiecare fix dezactivat → testele lui pică). Docs: `CLIENT_PROTOCOL.md`
 §4, §6.1, §6.3, §6.4, §7.2, §7.4, §10; README (formate de răspuns).
 
+### Deschise — găsite cu `teste.md` (§9)
+Comportamentul real al engine-ului, documentat în `teste.md`. Primele patru ar trebui rezolvate
+înainte de pachetul Python (schimbă ce vede un client); ultimul poate rămâne.
+
+- [ ] **Id-uri duplicate + index inconsistent** — prima coloană INT e indexată, dar nu unică:
+  `SELECT ... WHERE id = 1` prin index întoarce **un** rând, `UPDATE ... WHERE id = 1` le modifică
+  pe toate. Decizie de luat: cheie unică (INSERT duplicat = eroare) sau index cu chei multiple.
+- [ ] **Coloane duplicate în CREATE TABLE** — `(a INT, a STRING)` e acceptat.
+- [ ] **`=` / `!=` compară text** — `9.50 ≠ 9.5`, `TRUE ≠ true`. Ar trebui comparat după tipul
+  coloanei (numeric la INT/FLOAT, fără majuscule la BOOL).
+- [ ] **`_` la începutul unui nume** e aruncat în tăcere de lexer (`_x` devine `x`).
+- [ ] **`CREATE DATABASE` pe un nume existent** nu dă eroare (inofensiv, dar asimetric cu
+  `CREATE TABLE`).
+
 ### Bug-uri adevărate în NetworkServer.cpp
    Fiindcă tot revii la fișierul ăsta — astea sunt problemele reale din el:
    
@@ -264,9 +310,30 @@ Toate verificate prin mutații (fiecare fix dezactivat → testele lui pică). D
   Descrierea originală, pentru context:
   **Comentariul de la linia 134 minte.** Zice "synchronous, with 5s timeout via deadline" — nu există niciun timeout. handleHandshake face I/O blocant sincron pe un thread de io_context, deci o conexiune care nu trimite nimic blochează thread-ul pe termen nelimitat. Cu thread_count: 4, patru conexiuni deschise și mute îngheață tot serverul, inclusiv accept-ul.
 
-- **Token-ul auth generat nu ajunge niciodată în log.** prepare() e apelat la GUI.cpp:45, dar setLogCallback abia la :51. Toate log-urile din loadOrCreateSecret() — inclusiv "Generated auth token: ..." (NetworkServer.cpp:97) — se duc într-un logCallback gol. Token-ul ajunge doar în server_auth.conf.
+- ✅ **Token-ul auth generat nu ajungea în log** *(rezolvat odată cu noul GUI)* — `GUI::toggleServer`
+  apelează acum `setLogCallback` **înainte** de `prepare()`, deci `Generated auth token: ...` din
+  `loadOrCreateSecret()` ajunge în log.
+  Descrierea originală, pentru context:
+  **Token-ul auth generat nu ajunge niciodată în log.** prepare() e apelat la GUI.cpp:45, dar setLogCallback abia la :51. Toate log-urile din loadOrCreateSecret() — inclusiv "Generated auth token: ..." (NetworkServer.cpp:97) — se duc într-un logCallback gol. Token-ul ajunge doar în server_auth.conf.
 
-- **Race pe logs.** GUI.cpp:48, :55 și :73 fac push_back fără logsMutex, în timp ce thread-urile de io scriu sub lock — deci lock-ul nu protejează nimic acolo.
+- ✅ **Race pe logs** *(rezolvat odată cu noul GUI)* — toate scrierile în log trec prin
+  `GUI::addLog` (sub `logsMutex`), inclusiv callback-ul serverului și butonul Clear; desenarea
+  citește tot sub lock.
+  Descrierea originală, pentru context:
+  **Race pe logs.** GUI.cpp:48, :55 și :73 fac push_back fără logsMutex, în timp ce thread-urile de io scriu sub lock — deci lock-ul nu protejează nimic acolo.
+
+- ✅ **GUI-ul folosea engine-ul fără lock** *(găsit și rezolvat la rescrierea GUI-ului)* —
+  `GUI::executeQuery` apela `engine.query` direct, în timp ce thread-urile de io îl apelau sub
+  `engineMutex`, deci un query din GUI putea rula în paralel cu unul de pe rețea pe același
+  engine. Acum GUI-ul ia același mutex (`NetworkServer::getEngineMutex()`), și pentru query-uri,
+  și pentru citirea catalogului în explorer.
+- ✅ **`USE` din GUI lăsa un switch în așteptare** *(găsit și rezolvat)* — GUI-ul nu apela
+  `Engine::consumePendingSwitch()`, deci următorul client de rețea primea `{"type":"switch"}` ca
+  răspuns la query-ul **lui**. Acum GUI-ul îl consumă imediat după query.
+- ✅ **Repornirea serverului după ce thread-ul lui murise** *(găsit și rezolvat)* — dacă
+  `server.run()` arunca, `serverThread` rămânea joinable, iar următorul START atribuia un thread
+  nou peste el → `std::terminate`. Acum se face `join` înainte. `serverRunning` e `std::atomic<bool>`
+  (era scris și din thread-ul serverului).
 
 - **Minore**: rateLimitMap crește nelimitat (o intrare per IP, niciodată curățată); async_read_until pe streambuf fără limită de mărime; comparația auth de la :149 nu e constant-time; stop() apelează acceptor.close() din thread-ul GUI cât timp thread-urile de io folosesc acceptor-ul, ceea ce nu e thread-safe în asio (ar trebui prin asio::post).
 

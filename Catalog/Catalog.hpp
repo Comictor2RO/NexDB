@@ -20,6 +20,7 @@ class Catalog {
 
         //Getter
         std::vector<Columns> getColumns(const std::string &name) const;
+        std::vector<std::string> getTableNames() const;   // sorted by name
         int getTableId(const std::string &name) const;
 
     private:

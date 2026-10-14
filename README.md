@@ -6,7 +6,7 @@ A lightweight relational database engine written in **C++23**, built for use in 
 
 ## What is this?
 
-NexDB is a self-contained SQL database engine you can drop into a project and run locally. It exposes a **TCP server** so any application — regardless of language — can send SQL queries and receive results over a plain text protocol. It also ships with a **Raylib-based GUI** for interactive query execution and visual result browsing.
+NexDB is a self-contained SQL database engine you can drop into a project and run locally. It exposes a **TCP server** so any application — regardless of language — can send SQL queries and receive results as line-delimited JSON. It also ships with a **VS Code-style GUI** (built on Raylib) for writing queries, browsing databases and inspecting results.
 
 It is intentionally minimal. No heavy dependencies, no installation. Compile and run.
 
@@ -18,7 +18,8 @@ It is intentionally minimal. No heavy dependencies, no installation. Compile and
 - Remote access via TCP — connect from C#, Python, Node, or anything that can open a socket
 - Persistent storage with WAL-based crash recovery and fsync durability
 - B+ tree indexing for fast primary key lookups
-- Thread-safe — concurrent reads and serialized writes via shared mutexes
+- Real SQL `NULL`, negative numbers, column lists in `INSERT`, affected-row counts
+- Thread-safe — every query, local or remote, runs under one engine lock
 - Challenge-response authentication with rate limiting and IP banning
 - Configurable via `config.json` — no recompilation needed
 - GUI for quick manual queries during development
@@ -27,19 +28,144 @@ It is intentionally minimal. No heavy dependencies, no installation. Compile and
 
 ## Interface
 
-The GUI is intentionally simple and split into 3 sections: a **query input** area where you type SQL, a **result panel** that displays the returned rows, and a **logs** section that shows server activity and execution messages.
+The GUI is laid out like VS Code: a custom title bar, a database **explorer** on the left, a
+**center panel** with the results, the query editor and the log, a **side panel** on the right
+(reserved for future features) and a **status bar**.
+
+```
+┌─ NexDB ─────────────────── mydb — NexDB ───────────── [◧][◨]  ─  □  ✕ ┐
+│ ╭ EXPLORER ─────╮ ╭ RESULTS ─────────────── 3 rows · 0.4 ms ╮ ╭ PANEL ─╮ │
+│ │ ▾ ⛁ mydb      │ │  #  id  name    age                     │ │        │ │
+│ │   ▸ ▦ users   │ │  1  1   Alice   30                      │ │        │ │
+│ │   ▾ ▦ orders  │ ├ QUERY ──────────────── Ctrl+Enter [▶Run]┤ │        │ │
+│ │       • id INT│ │ 1  SELECT * FROM users                  │ │        │ │
+│ │ ▸ ⛁ other     │ │ 2  WHERE age > 18                       │ │        │ │
+│ │               │ ├ LOG ─────────────────────────── [Clear] ┤ │        │ │
+│ │               │ │ > SELECT * FROM users WHERE age > 18    │ │        │ │
+│ │               │ │ [OK] Rows returned: 3 (0.41 ms)         │ │        │ │
+│ ╰───────────────╯ ╰─────────────────────────────────────────╯ ╰────────╯ │
+│ ● Server: port 3000   DB: mydb                   Ln 2, Col 17  Theme: Dark│
+└───────────────────────────────────────────────────────────────────────────┘
+```
 
 ![Main Interface](docs/screenshots/gui_main.png)
-If the command succeeds, the result will appear in the **result panel** and a confirmation message will be written to the **logs** section.
-
 ![Query Results](docs/screenshots/gui_results.png)
-Once you press the **Start Server** button, the **logs** section will display the port the TCP server has opened on — use that port to connect from your application.
-
 ![Server Status](docs/screenshots/gui_server.png)
+
+*The screenshots still show the previous layout and will be replaced.*
+
+### Window
+
+- The title bar is custom (undecorated window): **drag** it to move the window, **double-click**
+  it to maximize / restore, and use the **minimize**, **maximize / restore** and **close**
+  buttons on the right. Maximize fills the screen without covering the taskbar; dragging a
+  maximized window restores it under the cursor, like Windows does.
+- Resize the window from any **edge or corner**.
+- The two icons next to the window buttons open and close the **explorer** and the **right
+  panel**. The center panel animates to fill the freed space.
+- Every border is **draggable**: explorer width, right panel width, and the splits between
+  results, editor and log.
+- Windows snapping (Win+Arrow, dragging to a screen edge) is not available for the custom
+  title bar.
+
+### Explorer (left)
+
+Every database in `databases/`, expandable into its tables and then their columns with their
+types. The active database is highlighted.
+
+- Click the **chevron** to expand or collapse a node.
+- Click **another database** to run `USE` on it.
+- Click a **table** to run `SELECT * FROM` it (switching database first if needed).
+- The tree refreshes after every query, every 2 seconds (network clients can change the
+  schema too), and from the refresh button.
+
+### Center panel
+
+- **Results** — a grid with aligned columns, a sticky header and a row number column.
+  Scroll vertically with the wheel, horizontally with **Shift+wheel**. SQL `NULL` is drawn
+  *italic and dimmed*, so it never looks like the string `'NULL'`. Statements without rows
+  show their outcome here (`Rows affected: 2`, `Table created`, or the error in red), and the
+  header shows the row count and the execution time.
+- **Query** — a multi-line editor with line numbers and SQL highlighting. Statements are
+  separated by `;` and run in order; the script stops at the first error. If text is
+  selected, only the selection runs. The text stays in the editor after running.
+- **Log** — every statement, its outcome and timing, plus server messages, color-coded.
+
+### Status bar
+
+Server state and port (**click to start or stop** the TCP server), the active database, the
+editor cursor position, and the theme (**click to switch** dark / light).
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+Enter` / `F5` | Run the editor (or the selection) |
+| `Ctrl+Up` / `Ctrl+Down` | Previous / next query from history |
+| `Ctrl+B` | Toggle the explorer |
+| `Ctrl+Alt+B` | Toggle the right panel |
+| `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Select all / copy / cut / paste |
+| `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`) | Undo / redo |
+| `Ctrl+Left` / `Ctrl+Right` | Move by word |
+| `Ctrl+Backspace` / `Ctrl+Delete` | Delete by word |
+| `Home` / `End`, `Ctrl+Home` / `Ctrl+End` | Line start / end, document start / end |
+| `Shift` + any movement, mouse drag | Extend the selection |
+| Double-click a word | Select the word |
 
 ---
 
 ## What's new in this version
+
+### VS Code-style GUI
+The GUI was rebuilt around the layout described in [Interface](#interface): custom title bar,
+explorer, results / editor / log center panel, right panel, status bar, draggable splits and
+collapsible side panels. The fonts now include Romanian diacritics (ă â î ș ț).
+
+The GUI now takes the **same lock as network clients** before touching the engine. Before, a
+query typed in the GUI could run at the same time as a remote one. A `USE` run from the GUI no
+longer leaves a pending switch behind (the next network client used to receive it as the answer
+to its own query), the generated auth token is written to the log, and the log is no longer
+written without its mutex.
+
+### Real `NULL`
+Unquoted `NULL` is now a real SQL NULL, valid in every column type and distinct from the string
+`'NULL'`:
+
+```sql
+INSERT INTO products VALUES (2, 'Out of stock', NULL, false)
+SELECT * FROM products WHERE price IS NULL
+SELECT * FROM products WHERE price IS NOT NULL
+UPDATE products SET price = NULL WHERE id = 3
+```
+
+Comparisons follow SQL rules: `WHERE price = NULL` matches nothing, and `price != 5` does not
+match rows where `price` is NULL. Over the network, NULL is a bare JSON `null`; the string
+`'NULL'` stays `"NULL"`.
+
+### Negative numbers
+A sign written directly against a digit is part of the number: `VALUES (1, -5)` stores `-5`
+and `WHERE price > -0.5` compares against `-0.5`. Before, the `-` was silently dropped. `+5`
+is accepted and stored as `5`.
+
+### `INSERT` column lists
+`INSERT INTO users (name, id) VALUES ('Alice', 1)` places each value in the column it names, in
+any order. Columns left out are set to `NULL`. An unknown or repeated column is an error.
+Before, the list was ignored and values were applied positionally.
+
+### Affected-row counts and clearer errors
+`INSERT`, `UPDATE` and `DELETE` now answer `{"type": "ok", "affected": N}`; `0` means nothing
+matched and is not an error. `UPDATE` with an unknown column or a value of the wrong type is now
+an error instead of a silent `ok`, and a `WHERE` on a column that does not exist is an error for
+`SELECT`, `UPDATE` and `DELETE` instead of quietly returning no rows.
+
+### WAL fixes
+- Recovery used to rebuild statements without quotes, so any string with a space, comma,
+  quote or an empty value failed to replay and the row was lost. Values are now quoted.
+- The first statement after startup was missing from the WAL (the stream was left in a
+  failed state after reading the log), so it was not protected against a crash.
+- A logged statement that fails on replay is now skipped with a message instead of aborting
+  startup.
+- An empty string in the last column no longer comes back one column short.
 
 ### `DROP DATABASE` command
 Deletes a database and every file behind it (`.db`, `.cat`, `.wal`):
@@ -48,7 +174,8 @@ Deletes a database and every file behind it (`.db`, `.cat`, `.wal`):
 DROP DATABASE myproject
 ```
 
-Available **from the GUI only** — network clients are refused, see the next section.
+Available **from the GUI**; network clients are refused unless `allow_remote_db_admin` is on
+(see the next section).
 
 This is **irreversible and unconfirmed** — there is no `IF EXISTS`, no soft delete, and no
 recycle bin. The statement is not written to the WAL, so it is never replayed on recovery.
@@ -68,7 +195,7 @@ connection — and `USE` is *not* blocked for network clients. So a `DROP DATABA
 the GUI can fail because a remote client switched the active database a moment earlier.
 
 ### `CREATE DATABASE` / `DROP DATABASE` are blocked for network clients
-Creating and destroying databases is now an operator action, not something a connected client
+Creating and destroying databases is an operator action, not something a connected client
 can do. Both statements still parse; `Engine::query` refuses them afterwards, based on the
 statement type, before anything runs:
 
@@ -79,32 +206,33 @@ statement type, before anything runs:
 Since the check reads the parsed statement rather than the query text, case and spacing cannot
 get around it — `create database x` and `   CrEaTe   DaTaBaSe   x` are refused identically.
 Nothing is created, deleted or switched, and the refusal is an ordinary error response, so the
-connection stays open and usable.
+connection stays open and usable. Setting `allow_remote_db_admin` to `true` in `config.json`
+lifts the restriction.
 
 The GUI runs on the same engine and is unaffected: locally both statements work exactly as
 described above. `USE` is deliberately still allowed over the network, so clients can move
 between existing databases — they just cannot add or remove any.
 
 ### Protocol version banner
-Every connection now begins with a version line (`NEXDB/1.0.0\n`) before authentication,
+Every connection begins with a version line (`NEXDB/1.0.0\n`) before authentication,
 so clients can detect an incompatible server up front instead of failing on a malformed
-response. The protocol version is bumped whenever the wire format changes.
+response. The protocol version is bumped whenever the wire format changes incompatibly;
+added fields (like `affected`) do not bump it.
 
 ### Column headers in results
-`SELECT` responses now include a `columns` array alongside the row values
+`SELECT` responses include a `columns` array alongside the row values
 (`{"type": "rows", "columns": ["id", "name"], "rows": [...]}`), so clients can build named
 objects like `{id: 1, name: "Alice"}` instead of positional arrays. A `SELECT` matching no
-rows still returns the header with an empty `rows` array. The GUI's result panel renders
-these column names as a header row.
+rows still returns the header with an empty `rows` array.
 
 ### Multi-table database files
-Previously each table was stored in its own `.db` file. Now all tables share a single `.db` file per database. Pages are tagged with a `tableId` in the page header — the storage layer allocates and reclaims pages per table automatically.
+All tables of a database share a single `.db` file. Pages are tagged with a `tableId` in the page header — the storage layer allocates and reclaims pages per table automatically.
 
 ### `databases/` folder
-All database files (`*.db`, `*.cat`, `*.wal`) are now stored inside a `databases/` subdirectory, created automatically on startup. The active database is selected via `config.json`.
+All database files (`*.db`, `*.cat`, `*.wal`) are stored inside a `databases/` subdirectory, created automatically on startup. The database opened at startup is selected via `config.json`.
 
 ### `CREATE DATABASE` / `USE DATABASE` commands
-Two new SQL commands for managing multiple databases:
+Two SQL commands for managing multiple databases:
 
 ```sql
 CREATE DATABASE myproject
@@ -112,26 +240,25 @@ USE DATABASE myproject
 USE myproject
 ```
 
-`CREATE DATABASE` creates the database files on disk. `USE DATABASE` signals the client to switch context (returns `SWITCH <name>` over TCP — the client is expected to reconnect targeting that database).
-
-> Superseded in this version: `CREATE DATABASE` is no longer available to network clients — see [`CREATE DATABASE` / `DROP DATABASE` are blocked for network clients](#create-database--drop-database-are-blocked-for-network-clients) above. `USE DATABASE` is unchanged.
+`CREATE DATABASE` creates the database files on disk (GUI only by default, see above). `USE`
+switches the engine to another database and answers `{"type": "switch", "db": "<name>"}`.
+The switch applies to **every** connected client and to the GUI, not only to the connection
+that sent it.
 
 ### Localhost bypass
-Connections from `127.0.0.1` or `::1` skip the challenge-response handshake and receive `AUTH OK` immediately. This makes local tooling (Python scripts, GUI) simpler. Remote connections still require full authentication.
+Connections from `127.0.0.1` or `::1` skip the challenge-response handshake and receive `AUTH OK` immediately. This makes local tooling (scripts, test clients) simpler. Remote connections still require full authentication.
 
 ### FLOAT and BOOL column types
-Two new column types are now supported in addition to `INT` and `STRING`:
+Two column types in addition to `INT` and `STRING`:
 
 - `FLOAT` — stores decimal numbers (e.g. `3.14`, `-0.5`)
 - `BOOL` — stores boolean values: `true`, `false`, `1`, `0`, `TRUE`, `FALSE`
 
-NULL values (`NULL`, unquoted) can be inserted into any column regardless of type. `'NULL'` in quotes is a regular string, not NULL.
-
 ### Concurrent connections
-The TCP server now runs an ASIO I/O thread pool. The number of threads is set via `thread_count` in `config.json` (default 4). Multiple clients can be handled simultaneously; engine access is serialized internally via a mutex.
+The TCP server runs an ASIO I/O thread pool. The number of threads is set via `thread_count` in `config.json` (default 4). Multiple clients are handled simultaneously; queries are serialized by one engine mutex, which the GUI shares.
 
 ### Atomic DELETE and UPDATE (WAL)
-DELETE and UPDATE operations are now fully atomic. The WAL logs the complete post-operation state before modifying storage using a `REPLACE_BEGIN` / `REPLACE_ROW` pattern. On crash recovery, the engine can always restore the correct final state without data loss or partial writes. WAL values are percent-encoded to safely handle any delimiter characters inside stored data.
+DELETE and UPDATE operations are fully atomic. The WAL logs the complete post-operation state before modifying storage using a `REPLACE_BEGIN` / `REPLACE_ROW` pattern. On crash recovery, the engine can always restore the correct final state without data loss or partial writes. WAL values are percent-encoded to safely handle any delimiter characters inside stored data.
 
 ---
 
@@ -165,7 +292,7 @@ NexDB reads `config.json` from the same directory as the executable at startup. 
 | `handshake_timeout` | `5` | Seconds a client has to answer `CHALLENGE` with `AUTH` before the server closes the connection. Does not count toward the IP ban |
 | `bypass_localhost` | `true` | Skip the auth handshake for `127.0.0.1` / `::1` connections |
 | `allow_remote_db_admin` | `false` | Let network clients run `CREATE DATABASE` / `DROP DATABASE`. Off by default; the GUI is unaffected either way |
-| `database` | `"mydb"` | Active database name (files stored in `databases/`) |
+| `database` | `"mydb"` | Database opened at startup (files stored in `databases/`) |
 
 An **unknown key aborts startup** rather than being ignored, so a typo cannot silently leave a
 setting at its default. The error names the offending key.
@@ -174,7 +301,9 @@ setting at its default. The error names the offending key.
 
 ## TCP Protocol
 
-The server listens on the port configured in `config.json` (default 3000).
+The server listens on the port configured in `config.json` (default 3000). Start it from the
+GUI status bar. The full client-side specification — every response shape, edge case and a
+checklist for client authors — is in [`docs/CLIENT_PROTOCOL.md`](docs/CLIENT_PROTOCOL.md).
 
 ### Protocol banner
 
@@ -186,7 +315,7 @@ Server → Client:  NEXDB/1.0.0\n
 ```
 
 A client should read this line first and verify the major version matches what it
-supports. Future protocol changes bump this version.
+supports.
 
 ### Authentication
 
@@ -207,13 +336,16 @@ Client → Server:  AUTH <SHA256(secret + nonce)>\n
 Server → Client:  AUTH OK\n   (or AUTH FAIL\n / AUTH BANNED\n)
 ```
 
-The shared secret is auto-generated on first run and saved to `server_auth.conf`. You can override it by setting the `VDT_AUTH_TOKEN` environment variable.
+The shared secret is auto-generated on first run, saved to `server_auth.conf` and written to
+the GUI log at that moment (later starts only log that it was loaded). You can override it by
+setting the `VDT_AUTH_TOKEN` environment variable.
 
-After 3 failed attempts the IP is banned for 30 seconds (configurable via `config.json`).
+After 3 failed attempts the IP is banned for 30 seconds (configurable via `config.json`). A
+client that does not answer the challenge within `handshake_timeout` seconds is disconnected.
 
 ### Queries
 
-After `AUTH OK`, send SQL queries terminated with `\n`:
+After `AUTH OK`, send one SQL statement per line, terminated with `\n`:
 
 ```
 SELECT * FROM users WHERE age > 18\n
@@ -225,7 +357,7 @@ SELECT * FROM users WHERE age > 18\n
 |------|----------|
 | Success, no rows (DDL: CREATE/DROP) | `{"type": "ok"}` |
 | Success, INSERT / UPDATE / DELETE | `{"type": "ok", "affected": <rows touched>}` |
-| Success, with rows | `{"type": "rows", "columns": ["id", "name"], "rows": [["1", "Alice"], ["2", "Bob"]]}` |
+| Success, with rows | `{"type": "rows", "columns": ["id", "name"], "rows": [["1", "Alice"], ["2", null]]}` |
 | Database switch (`USE`) | `{"type": "switch", "db": "<dbname>"}` |
 | Error | `{"type": "error", "message": "<message>"}` |
 
@@ -236,9 +368,13 @@ response with the header and an empty `rows` array (`{"type": "rows", "columns":
 only non-SELECT commands (INSERT/DELETE/…) return `ok`. INSERT, UPDATE and DELETE add an
 `affected` row count (`0` when nothing matched); DDL statements do not.
 
-All values are JSON-escaped, so any character — including `|`, newlines, or the literal
-text `END` — is safe inside a value. Clients read one line and parse it with a standard
-JSON parser (`JSON.parse`, `json.loads`, `System.Text.Json`, …).
+Every value is a **JSON string**, except SQL `NULL`, which is a bare **JSON `null`**: `42`
+comes back as `"42"`, `true` as `"true"`, the string `'NULL'` as `"NULL"`. All values are
+JSON-escaped, so any character — including `|`, newlines, or the literal text `END` — is
+safe inside a value. Clients read one line and parse it with a standard JSON parser
+(`JSON.parse`, `json.loads`, `System.Text.Json`, …).
+
+An `error` does not close the connection; it stays usable for the next query.
 
 ---
 
@@ -303,7 +439,11 @@ public class NexDBClient : IDisposable
     // Column names from the last `rows` response (empty for non-SELECT commands).
     public string[] Columns { get; private set; } = Array.Empty<string>();
 
-    public List<string[]> Query(string sql)
+    // Rows touched by the last INSERT / UPDATE / DELETE; null for anything else.
+    public int? Affected { get; private set; }
+
+    // Values are strings, or null for SQL NULL.
+    public List<string?[]> Query(string sql)
     {
         _writer.WriteLine(sql);
 
@@ -311,29 +451,29 @@ public class NexDBClient : IDisposable
         string line = _reader.ReadLine() ?? throw new Exception("Connection closed by server");
 
         using var doc = JsonDocument.Parse(line);
-        string type = doc.RootElement.GetProperty("type").GetString()!;
+        JsonElement root = doc.RootElement;
+        string type = root.GetProperty("type").GetString()!;
 
         Columns = Array.Empty<string>();
+        Affected = null;
 
         switch (type)
         {
             case "ok":
+                if (root.TryGetProperty("affected", out JsonElement affected))
+                    Affected = affected.GetInt32();
+                return new List<string?[]>();
             case "switch":
-                return new List<string[]>();
+                return new List<string?[]>();
             case "error":
-                throw new Exception(doc.RootElement.GetProperty("message").GetString());
+                throw new Exception(root.GetProperty("message").GetString());
             case "rows":
-                Columns = doc.RootElement.GetProperty("columns")
+                Columns = root.GetProperty("columns")
                     .EnumerateArray().Select(c => c.GetString()!).ToArray();
 
-                var rows = new List<string[]>();
-                foreach (var row in doc.RootElement.GetProperty("rows").EnumerateArray())
-                {
-                    var cells = new List<string>();
-                    foreach (var cell in row.EnumerateArray())
-                        cells.Add(cell.GetString()!);
-                    rows.Add(cells.ToArray());
-                }
+                var rows = new List<string?[]>();
+                foreach (var row in root.GetProperty("rows").EnumerateArray())
+                    rows.Add(row.EnumerateArray().Select(cell => cell.GetString()).ToArray()); // null stays null
                 return rows;
             default:
                 throw new Exception("Unknown response type: " + type);
@@ -342,12 +482,12 @@ public class NexDBClient : IDisposable
 
     // Convenience: returns each row as a column-name → value dictionary,
     // e.g. { "id": "1", "name": "Alice" }.
-    public List<Dictionary<string, string>> QueryObjects(string sql)
+    public List<Dictionary<string, string?>> QueryObjects(string sql)
     {
         var rows = Query(sql);
         return rows.Select(r =>
         {
-            var obj = new Dictionary<string, string>();
+            var obj = new Dictionary<string, string?>();
             for (int i = 0; i < Columns.Length && i < r.Length; i++)
                 obj[Columns[i]] = r[i];
             return obj;
@@ -373,21 +513,23 @@ string secret = File.ReadAllText("server_auth.conf").Trim();
 using var db = new NexDBClient("127.0.0.1", 3000, secret);
 
 db.Query("CREATE TABLE users (id INT, name STRING, age INT, score FLOAT, active BOOL)");
-db.Query("INSERT INTO users VALUES (1, Alice, 30, 9.5, true)");
-db.Query("INSERT INTO users VALUES (2, Bob, 25, 7.2, false)");
+db.Query("INSERT INTO users VALUES (1, 'Alice', 30, 9.5, true)");
+db.Query("INSERT INTO users VALUES (2, 'Bob', 25, -7.2, false)");
+db.Query("INSERT INTO users (id, name) VALUES (3, 'Carol')");   // age, score, active = NULL
 
 // Positional rows + the column header
 var rows = db.Query("SELECT * FROM users WHERE age > 20");
 Console.WriteLine(string.Join(" | ", db.Columns));   // id | name | age | score | active
 foreach (var row in rows)
-    Console.WriteLine(string.Join(" | ", row));
+    Console.WriteLine(string.Join(" | ", row.Select(v => v ?? "NULL")));
 
 // Or map straight to named objects: { "id": "1", "name": "Alice", ... }
-foreach (var user in db.QueryObjects("SELECT id, name FROM users WHERE age > 20"))
+foreach (var user in db.QueryObjects("SELECT id, name FROM users WHERE age IS NOT NULL"))
     Console.WriteLine($"{user["id"]}: {user["name"]}");
 
 db.Query("UPDATE users SET age = 31 WHERE id = 1");
-db.Query("DELETE FROM users WHERE id = 2");
+Console.WriteLine($"updated {db.Affected} row(s)");          // updated 1 row(s)
+db.Query("DELETE FROM users WHERE age IS NULL");
 ```
 
 ---
@@ -396,39 +538,72 @@ db.Query("DELETE FROM users WHERE id = 2");
 
 ```sql
 -- Database management
-CREATE DATABASE myproject     -- GUI only; refused for network clients
+CREATE DATABASE myproject     -- GUI only by default; refused for network clients
 USE DATABASE myproject
 USE myproject
-DROP DATABASE oldproject      -- GUI only; deletes the files, cannot drop the active database
+DROP DATABASE oldproject      -- GUI only by default; deletes the files, cannot drop the active database
 
 -- Table management
 CREATE TABLE products (id INT, name STRING, price FLOAT, active BOOL)
+CREATE TABLE notes (id INT, body TEXT, done BOOLEAN)        -- TEXT / BOOLEAN are aliases
 DROP TABLE products
 
--- Data manipulation
-INSERT INTO products VALUES (1, Widget, 9.99, true)
+-- Inserting
+INSERT INTO products VALUES (1, 'Widget', 9.99, true)
 INSERT INTO products VALUES (2, 'Out of stock', NULL, false)
+INSERT INTO products VALUES (3, 'Refund', -4.5, 0)
+INSERT INTO products (name, id) VALUES ('Gadget', 4)        -- price, active = NULL
+INSERT INTO products VALUES (5, 'don''t', 1, true)          -- '' is an escaped quote
+
+-- Querying
 SELECT * FROM products
 SELECT name, price FROM products WHERE price > 5.0
-UPDATE products SET price = 7.99 WHERE id = 1
+SELECT * FROM products WHERE price < -1
+SELECT * FROM products WHERE price IS NULL
+SELECT * FROM products WHERE name IS NOT NULL
+
+-- Changing
+UPDATE products SET price = 7.99, active = false WHERE id = 1
+UPDATE products SET price = NULL WHERE name = 'Gadget'
 DELETE FROM products WHERE id = 2
+DELETE FROM products                                         -- every row
 ```
 
-Supported column types: `INT`, `STRING`, `FLOAT`, `BOOL`. `TEXT` and `BOOLEAN` are accepted as aliases in `CREATE TABLE` and stored as `STRING` / `BOOL`.
+**Types:** `INT`, `STRING`, `FLOAT`, `BOOL`. `TEXT` and `BOOLEAN` are accepted as aliases in
+`CREATE TABLE` and stored as `STRING` / `BOOL`. `BOOL` accepts `true`, `false`, `TRUE`, `FALSE`,
+`1`, `0`. `FLOAT` has no exponent notation (`1e5` is a parse error).
 
-`CREATE TABLE` on a name that already exists returns an error (`Table <name> already exists`) and leaves the existing table untouched.
+**Values:** numbers (`42`, `9.5`, `-5`; the sign must touch the digit), strings in single
+quotes (`'Alice'`, `''` for empty, `''` inside a string for a literal `'`), and `NULL`
+(unquoted, any column type). An unquoted word such as `Alice` is also read as text, but use
+quotes for anything with spaces or punctuation.
 
-Any column can store `NULL` as a value regardless of its declared type. Use `WHERE col IS NULL` / `IS NOT NULL` to filter on it; `WHERE col = NULL` matches nothing, as in standard SQL. Over the network, NULL is sent as JSON `null`.
+**NULL:** distinct from the string `'NULL'`. Filter with `IS NULL` / `IS NOT NULL`;
+`WHERE col = NULL` matches nothing, and no comparison (`=`, `!=`, `<`, …) ever matches a NULL.
 
-Supported operators in WHERE: `=`, `!=`, `<`, `>`, `<=`, `>=`
+**WHERE:** exactly one condition — `=`, `!=`, `<`, `>`, `<=`, `>=`, `IS NULL`, `IS NOT NULL`.
+`=` and `!=` compare the stored text (`9.50` does not equal `9.5`); `<`, `>`, `<=`, `>=`
+compare numerically. No `AND` / `OR`, `ORDER BY`, `LIMIT` or `JOIN` yet.
 
-String values can optionally be wrapped in single quotes: `WHERE name = 'Alice'` and `VALUES (1, 'Alice')` are both valid.
+**Errors** are explicit: an existing table on `CREATE TABLE`, a missing table, an unknown
+column (in the select list, `SET`, `WHERE` or an `INSERT` column list), a value of the wrong
+type, a wrong value count and every parse error return `{"type": "error", ...}` with a
+readable message.
+
+**Names:** keywords are case-insensitive; table and column names are case-sensitive
+(`Users` ≠ `users`). `NULL`, `IS` and `NOT` are reserved. The first `INT` column of a table is
+indexed (B+ tree) but not enforced as unique.
+
+One statement per network query; in the GUI editor, `;` separates statements.
+
+[`teste.md`](teste.md) lists every accepted command with its variations and the exact result or
+error each one produces — useful as a manual test plan.
 
 ---
 
 ## Building
 
-Dependencies (ASIO, Raylib, GTest) are fetched automatically via CMake FetchContent. `config.json` is copied to the build output directory on every build.
+Dependencies (ASIO, Raylib, GTest) are fetched automatically via CMake FetchContent. `config.json` and `resources/` are copied to the build output directory on every build.
 
 ### Windows (MinGW)
 
@@ -454,6 +629,13 @@ cmake --build cmake-build-debug
 ./cmake-build-debug/bin/NexDB
 ```
 
+### Tests
+
+```bash
+./cmake-build-debug/bin/tests.exe                          # the whole suite
+./cmake-build-debug/bin/tests.exe --gtest_filter="*Null*"  # a subset
+```
+
 ---
 
 ## Architecture
@@ -464,7 +646,7 @@ NexDB/
 ├── Frontend/       SQL lexer + parser → AST
 ├── Engine/         Query executor
 ├── AST/            Statement types (Select, Insert, Delete, Update,
-│                   Create/Drop Table, Create/Drop/Use Database)
+│                   Create/Drop Table, Create/Drop/Use Database), Row / Value
 ├── Storage/
 │   ├── Page/         Fixed-size page (4096 bytes), tagged with tableId
 │   ├── PageHeader/   Page metadata (pageId, tableId, freeSpace, rowCount)
@@ -475,13 +657,17 @@ NexDB/
 ├── Catalog/        Table schema + tableId registry (persisted to .cat file)
 ├── WALManager/     Write-ahead log — fsync on commit for crash safety
 ├── Networking/     ASIO TCP server with challenge-response auth
-├── GUI/            Raylib interactive interface
+├── GUI/            Raylib interface: layout, explorer, results, log (GUI),
+│                   query editor (TextEditor), themes (Colors),
+│                   window helpers for the custom title bar (Platform)
+├── docs/           CLIENT_PROTOCOL.md — specification for client authors
+├── teste.md        Manual test catalog: every command and its exact result
 └── tests/          Google Test suite
 ```
 
 ### Thread safety
 
-`PageManager` uses a `std::shared_mutex` for the LRU cache (multiple concurrent readers, exclusive writes) and separate `std::mutex` instances for file I/O and insert serialization. `NetworkServer` runs an ASIO I/O thread pool (`thread_count` threads) and protects the engine with a single `std::mutex` to serialize query execution. The rate-limit map has its own `std::mutex`.
+`PageManager` uses a `std::shared_mutex` for the LRU cache (multiple concurrent readers, exclusive writes) and separate `std::mutex` instances for file I/O and insert serialization. `NetworkServer` runs an ASIO I/O thread pool (`thread_count` threads) and protects the engine with a single `std::mutex` to serialize query execution; the GUI takes the same mutex (`NetworkServer::getEngineMutex()`) for its own queries and for reading the catalog into the explorer. The rate-limit map and the GUI log each have their own `std::mutex`.
 
 ### Storage
 
@@ -489,10 +675,10 @@ Data is stored in fixed-size pages (4096 bytes). Each page header contains a `ta
 
 The LRU cache holds up to `cache_capacity` pages in memory (configurable); dirty pages are flushed to disk on eviction. Each table's `PageManager` tracks its own set of global page IDs.
 
+Values are stored as text, percent-encoded (`%` → `%25`, `|` → `%7C`, `~` → `%7E`, newlines); SQL `NULL` is stored as the marker `%N`, which no encoded string can produce.
+
 ### WAL & Durability
 
-All mutating operations (INSERT, UPDATE, DELETE) are logged to `engine.wal` before execution. On commit, the log entry is marked committed and `FlushFileBuffers` (Windows) / `fsync` (Linux) is called to guarantee the log is on physical disk before returning. On startup, uncommitted entries are replayed automatically.
+All mutating operations (INSERT, UPDATE, DELETE) are logged to the database's `.wal` file (`databases/<name>.wal`) before execution. On commit, a `COMMIT` line is appended and `FlushFileBuffers` (Windows) / `fsync` (Linux) is called to guarantee the log is on physical disk before returning. On startup, uncommitted entries are replayed automatically; a replayed statement that fails is logged and skipped instead of aborting startup.
 
-DELETE and UPDATE use a `REPLACE_BEGIN` / `REPLACE_ROW` pattern: the complete post-operation row set is written to the WAL before any storage is modified. This makes both operations fully atomic — a crash at any point leaves the engine able to recover the correct final state. WAL field values are percent-encoded so delimiter characters (`|`, `~`, `%`) inside stored data never corrupt the log format.
-
----
+DELETE and UPDATE use a `REPLACE_BEGIN` / `REPLACE_ROW` pattern: the complete post-operation row set is written to the WAL before any storage is modified. This makes both operations fully atomic — a crash at any point leaves the engine able to recover the correct final state. WAL field values are percent-encoded so delimiter characters (`|`, `~`, `%`) inside stored data never corrupt the log format, and replayed values are re-quoted so strings with spaces, commas or quotes survive recovery.

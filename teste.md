@@ -20,14 +20,16 @@ Unde vezi rezultatele:
 
 | Rezultat | În GUI | Prin rețea (o linie JSON) |
 |---|---|---|
-| `ok` | `[OK] Command executed.` | `{"type": "ok"}` |
-| `ok, affected N` | `[OK] Rows affected: N` | `{"type": "ok", "affected": N}` |
-| rânduri | tabel + `[OK] Rows returned: N` | `{"type": "rows", "columns": [...], "rows": [...]}` |
-| `switch db` | — | `{"type": "switch", "db": "..."}` |
-| eroare | `[ERROR] <mesaj>` | `{"type": "error", "message": "<mesaj>"}` |
+| `ok` | `Table created` / `Table dropped` / `Database created` / `Command executed` | `{"type": "ok"}` |
+| `ok, affected N` | `Rows affected: N` | `{"type": "ok", "affected": N}` |
+| rânduri | tabelul în RESULTS + `Rows returned: N` în log | `{"type": "rows", "columns": [...], "rows": [...]}` |
+| `switch db` | `Switched to database ...` | `{"type": "switch", "db": "..."}` |
+| eroare | mesajul cu roșu în RESULTS + `[ERROR] <mesaj>` în log | `{"type": "error", "message": "<mesaj>"}` |
 
-În tabelele de mai jos, `null` înseamnă SQL NULL (în GUI apare `NULL`, pe rețea `null` JSON),
-iar `"NULL"` înseamnă textul de 4 litere. În GUI cele două arată la fel.
+În GUI, mesajul apare în secțiunea RESULTS, iar în log cu prefixul `[OK]` și timpul de execuție.
+
+În tabelele de mai jos, `null` înseamnă SQL NULL (în GUI apare `NULL` italic și estompat, pe
+rețea `null` JSON), iar `"NULL"` înseamnă textul de 4 litere (în GUI apare normal).
 
 ---
 
@@ -298,7 +300,7 @@ Prin rețea (orice client, inclusiv de pe localhost), cu `allow_remote_db_admin:
 |---|---|---|
 | 8.1 | `HELLO world` | `Parse error: Missing required keyword` |
 | 8.2 | `SELECT` | `Parse error: Invalid identifier` |
-| 8.3 | `SELECT * FROM users; DROP TABLE users` | `Parse error: Unexpected tokens after end of statement` — o singură comandă pe query |
+| 8.3 | `SELECT * FROM users; DROP TABLE users` | prin rețea: `Parse error: Unexpected tokens after end of statement` — o singură comandă pe query. În editorul GUI, `;` separă comenzile, deci aici le-ar rula pe amândouă |
 
 ---
 
