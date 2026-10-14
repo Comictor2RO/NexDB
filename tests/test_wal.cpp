@@ -130,7 +130,7 @@ TEST_F(WALManagerTest, LogUpdateCreatesEntry) {
     cond.column = "id";
     cond.op    = "=";
     cond.value = "1";
-    std::vector<std::pair<std::string, std::string>> assignments = {{"name", "Bob"}};
+    std::vector<std::pair<std::string, Value>> assignments = {{"name", "Bob"}};
     wal.logUpdate("users", &cond, assignments);
 
     auto lines = readWalLines();
@@ -199,7 +199,7 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedUpdate) {
         cond.column = "id";
         cond.op    = "=";
         cond.value = "1";
-        std::vector<std::pair<std::string, std::string>> assignments = {{"name", "Bob"}};
+        std::vector<std::pair<std::string, Value>> assignments = {{"name", "Bob"}};
         wal.logUpdate("wal_upd", &cond, assignments);
     }
 
@@ -208,4 +208,99 @@ TEST_F(WALRecoveryTest, RecoverReplaysUncommittedUpdate) {
     auto results = engine.query("SELECT * FROM wal_upd");
     ASSERT_EQ(results.size(), 1);
     EXPECT_EQ(results[0].values[1], "Bob");
+}
+
+//Test 10: NULL is written to the WAL as the %N marker, the string "NULL" as plain text
+TEST_F(WALManagerTest, LogInsertWritesNullMarker) {
+    WALManager wal(testWalFile);
+    wal.logInsert("users", {"1", std::nullopt, "NULL"});
+
+    auto lines = readWalLines();
+    ASSERT_EQ(lines.size(), 1);
+    EXPECT_EQ(lines[0], "INSERT|users|1|%N|NULL|0");
+}
+
+//Test 11: recovery of an uncommitted INSERT keeps NULL vs 'NULL' and values that are not
+//bare words. The replay used to build VALUES (2,Alice Smith,...) without quotes, so any
+//space, comma, quote or empty string made it a parse error and the row was lost
+TEST_F(WALRecoveryTest, RecoverInsertPreservesNullsAndQuotedValues) {
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_null (id INT, name STRING, score FLOAT)");
+    }
+    std::remove(walFile.c_str());
+
+    {
+        WALManager wal(walFile);
+        wal.logInsert("wal_null", {"1", std::nullopt, std::nullopt});
+        wal.logInsert("wal_null", {"2", "NULL", "1.5"});
+        wal.logInsert("wal_null", {"3", "Alice Smith", std::nullopt});
+        wal.logInsert("wal_null", {"4", "a,b", "2"});
+        wal.logInsert("wal_null", {"5", "don't", "3"});
+        wal.logInsert("wal_null", {"6", "", std::nullopt});
+    }
+
+    Engine engine(128, dbFile, catFile, walFile);
+    auto rows = engine.query("SELECT * FROM wal_null");
+    ASSERT_EQ(rows.size(), 6u);
+    EXPECT_FALSE(rows[0].values[1].has_value());
+    EXPECT_FALSE(rows[0].values[2].has_value());
+    EXPECT_EQ(rows[1].values[1], "NULL");
+    EXPECT_EQ(rows[2].values[1], "Alice Smith");
+    EXPECT_FALSE(rows[2].values[2].has_value());
+    EXPECT_EQ(rows[3].values[1], "a,b");
+    EXPECT_EQ(rows[4].values[1], "don't");
+    EXPECT_EQ(rows[5].values[1], "");
+    EXPECT_FALSE(rows[5].values[2].has_value());
+}
+
+//Test 12: recovery of an uncommitted REPLACE (the path DELETE/UPDATE really use) keeps
+//NULLs and quoted values the same way
+TEST_F(WALRecoveryTest, RecoverReplacePreservesNullsAndQuotedValues) {
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_nullr (id INT, name STRING)");
+        engine.query("INSERT INTO wal_nullr VALUES (1, 'old')");
+    }
+    std::remove(walFile.c_str());
+
+    {
+        WALManager wal(walFile);
+        wal.logReplaceBegin("wal_nullr", nullptr);
+        wal.logReplaceRow("wal_nullr", {"1", std::nullopt});
+        wal.logReplaceRow("wal_nullr", {"2", "NULL"});
+        wal.logReplaceRow("wal_nullr", {"3", "Alice Smith"});
+    }
+
+    Engine engine(128, dbFile, catFile, walFile);
+    auto rows = engine.query("SELECT * FROM wal_nullr");
+    ASSERT_EQ(rows.size(), 3u);
+    EXPECT_FALSE(rows[0].values[1].has_value());
+    EXPECT_EQ(rows[1].values[1], "NULL");
+    EXPECT_EQ(rows[2].values[1], "Alice Smith");
+}
+
+//Test 13: recovery of an uncommitted DELETE ... WHERE name IS NULL rebuilds the
+//condition without a value, and removes only the NULL rows
+TEST_F(WALRecoveryTest, RecoverDeleteWhereIsNull) {
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_nulld (id INT, name STRING)");
+        engine.query("INSERT INTO wal_nulld VALUES (1, NULL)");
+        engine.query("INSERT INTO wal_nulld VALUES (2, 'NULL')");
+    }
+    std::remove(walFile.c_str());
+
+    {
+        WALManager wal(walFile);
+        Condition cond;
+        cond.column = "name";
+        cond.op     = "IS NULL";
+        wal.logDelete("wal_nulld", &cond);
+    }
+
+    Engine engine(128, dbFile, catFile, walFile);
+    auto rows = engine.query("SELECT * FROM wal_nulld");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "2");
 }

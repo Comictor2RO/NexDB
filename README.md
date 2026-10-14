@@ -125,7 +125,7 @@ Two new column types are now supported in addition to `INT` and `STRING`:
 - `FLOAT` — stores decimal numbers (e.g. `3.14`, `-0.5`)
 - `BOOL` — stores boolean values: `true`, `false`, `1`, `0`, `TRUE`, `FALSE`
 
-NULL values (`NULL`) can be inserted into any column regardless of type.
+NULL values (`NULL`, unquoted) can be inserted into any column regardless of type. `'NULL'` in quotes is a regular string, not NULL.
 
 ### Concurrent connections
 The TCP server now runs an ASIO I/O thread pool. The number of threads is set via `thread_count` in `config.json` (default 4). Multiple clients can be handled simultaneously; engine access is serialized internally via a mutex.
@@ -412,9 +412,11 @@ UPDATE products SET price = 7.99 WHERE id = 1
 DELETE FROM products WHERE id = 2
 ```
 
-Supported column types: `INT`, `STRING`, `FLOAT`, `BOOL`
+Supported column types: `INT`, `STRING`, `FLOAT`, `BOOL`. `TEXT` and `BOOLEAN` are accepted as aliases in `CREATE TABLE` and stored as `STRING` / `BOOL`.
 
-Any column can store `NULL` as a value regardless of its declared type.
+`CREATE TABLE` on a name that already exists returns an error (`Table <name> already exists`) and leaves the existing table untouched.
+
+Any column can store `NULL` as a value regardless of its declared type. Use `WHERE col IS NULL` / `IS NOT NULL` to filter on it; `WHERE col = NULL` matches nothing, as in standard SQL. Over the network, NULL is sent as JSON `null`.
 
 Supported operators in WHERE: `=`, `!=`, `<`, `>`, `<=`, `>=`
 

@@ -258,7 +258,7 @@ void GUI::drawResultsPanel()
         for (int j = 0; j < (int)results[rowIndex].values.size(); j++)
         {
             if (j > 0) rowStr += "   |   ";
-            rowStr += results[rowIndex].values[j];
+            rowStr += results[rowIndex].values[j].value_or("NULL");
         }
         DrawTextEx(regular, rowStr.c_str(), Vector2{10, (float)y + 4}, 18, 2, text);
     }

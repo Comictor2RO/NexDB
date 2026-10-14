@@ -12,7 +12,9 @@ class Catalog {
         explicit Catalog(const std::string& catalogPath = "catalog.dat");
 
         //Methods
-        void createTable(const std::string &name, const std::vector<Columns> &columns);
+        // Returns false, and changes nothing, if the name is taken or columns is empty.
+        // Check and insert happen under one lock, so callers can rely on the result.
+        bool createTable(const std::string &name, const std::vector<Columns> &columns);
         bool tableExists(const std::string &name) const;
         void dropTable(const std::string &name);
 

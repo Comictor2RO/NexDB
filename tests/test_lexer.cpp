@@ -149,6 +149,22 @@ TEST(LexerTest, EscapedQuoteInInsert) {
     EXPECT_TRUE(foundString);
 }
 
+// Test 16: unquoted NULL / IS / NOT are keywords in any case, while 'NULL' in quotes
+// stays a plain string, so the parser can tell SQL NULL from the text "NULL"
+TEST(LexerTest, NullIsKeywordQuotedNullIsString) {
+    Lexer lexer("null IS not 'NULL'");
+    auto tokens = lexer.tokenize();
+    ASSERT_GE(tokens.size(), 4u);
+    EXPECT_EQ(tokens[0].type, TokenType::KEYWORD);
+    EXPECT_EQ(tokens[0].value, "NULL");
+    EXPECT_EQ(tokens[1].type, TokenType::KEYWORD);
+    EXPECT_EQ(tokens[1].value, "IS");
+    EXPECT_EQ(tokens[2].type, TokenType::KEYWORD);
+    EXPECT_EQ(tokens[2].value, "NOT");
+    EXPECT_EQ(tokens[3].type, TokenType::STRING);
+    EXPECT_EQ(tokens[3].value, "NULL");
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

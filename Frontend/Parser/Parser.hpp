@@ -64,6 +64,7 @@ class Parser {
         std::expected<std::unique_ptr<DropDatabaseStatement>, ParseError> parseDropDatabase();
         std::expected<std::unique_ptr<UseDatabaseStatement>, ParseError> parseUseDatabase();
         std::expected<Condition *, ParseError> parseCondition();
+        std::expected<Value, ParseError> parseValue();
 };
 
 

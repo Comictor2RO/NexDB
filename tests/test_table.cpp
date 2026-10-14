@@ -167,7 +167,7 @@ TEST_F(TableTest, UpdateWithCondition) {
     table.insertRow({{"2", "Jane"}});
 
     Condition cond = {"id", "1", "="};
-    std::vector<std::pair<std::string, std::string>> assignments = {{"name", "Johnny"}};
+    std::vector<std::pair<std::string, Value>> assignments = {{"name", "Johnny"}};
     table.updateRow(&cond, assignments);
 
     auto result = table.selectRow(&cond);
@@ -201,4 +201,93 @@ TEST_F(TableTest, SelectWithDifferentOperators) {
     Condition cond3 = {"age", "25", "!="};
     auto result3 = table.selectRow(&cond3);
     EXPECT_EQ(result3.size(), 2);
+}
+
+// Test 11: NULL passes type validation for every column type and round-trips through
+// storage as NULL, distinct from the string "NULL"
+TEST_F(TableTest, NullIsValidForEveryTypeAndRoundTrips) {
+    std::vector<Columns> schema = {
+        {"id", "INT"}, {"name", "STRING"}, {"price", "FLOAT"}, {"active", "BOOL"}
+    };
+    Table table = makeTable("test_null_types", schema);
+
+    ASSERT_TRUE(table.insertRow({{"1", std::nullopt, std::nullopt, std::nullopt}}).has_value());
+    ASSERT_TRUE(table.insertRow({{"2", "NULL", "1.5", "true"}}).has_value());
+    // The text NULL is still not a valid INT
+    EXPECT_FALSE(table.insertRow({{"NULL", "x", "1", "true"}}).has_value());
+
+    auto rows = table.selectRow(nullptr);
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_FALSE(rows[0].values[1].has_value());
+    EXPECT_FALSE(rows[0].values[2].has_value());
+    EXPECT_FALSE(rows[0].values[3].has_value());
+    ASSERT_TRUE(rows[1].values[1].has_value());
+    EXPECT_EQ(*rows[1].values[1], "NULL");
+}
+
+// Test 12: IS NULL / IS NOT NULL select by nullness; =, != and < never match a NULL
+TEST_F(TableTest, NullComparisonsFollowSqlRules) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"age", "INT"}};
+    Table table = makeTable("test_null_where", schema);
+
+    table.insertRow({{"1", "18"}});
+    table.insertRow({{"2", std::nullopt}});
+    table.insertRow({{"3", "30"}});
+
+    Condition isNull = {"age", std::nullopt, "IS NULL"};
+    auto r1 = table.selectRow(&isNull);
+    ASSERT_EQ(r1.size(), 1u);
+    EXPECT_EQ(r1[0].values[0], "2");
+
+    Condition isNotNull = {"age", std::nullopt, "IS NOT NULL"};
+    EXPECT_EQ(table.selectRow(&isNotNull).size(), 2u);
+
+    // NULL != 18 is not true, so only row 3 matches
+    Condition notEqual = {"age", "18", "!="};
+    auto r3 = table.selectRow(&notEqual);
+    ASSERT_EQ(r3.size(), 1u);
+    EXPECT_EQ(r3[0].values[0], "3");
+
+    Condition less = {"age", "100", "<"};
+    EXPECT_EQ(table.selectRow(&less).size(), 2u);
+
+    Condition equalsNull = {"age", std::nullopt, "="};
+    EXPECT_EQ(table.selectRow(&equalsNull).size(), 0u);
+}
+
+// Test 13: a NULL in the indexed first INT column gets no index entry, so it neither
+// breaks the insert nor shows up for an indexed lookup
+TEST_F(TableTest, NullInIndexedColumnIsSkippedByIndex) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
+    Table table = makeTable("test_null_index", schema);
+
+    ASSERT_TRUE(table.insertRow({{std::nullopt, "ghost"}}).has_value());
+    ASSERT_TRUE(table.insertRow({{"1", "Alice"}}).has_value());
+
+    Condition byId = {"id", "1", "="};
+    auto r1 = table.selectRow(&byId);
+    ASSERT_EQ(r1.size(), 1u);
+    EXPECT_EQ(r1[0].values[1], "Alice");
+
+    Condition idEqualsNull = {"id", std::nullopt, "="};
+    EXPECT_EQ(table.selectRow(&idEqualsNull).size(), 0u);
+
+    Condition idIsNull = {"id", std::nullopt, "IS NULL"};
+    auto r3 = table.selectRow(&idIsNull);
+    ASSERT_EQ(r3.size(), 1u);
+    EXPECT_EQ(r3[0].values[1], "ghost");
+}
+
+// Test 14: an empty string in the last column survives storage. Rows are '|'-joined,
+// and the old split dropped a trailing empty field, so the row came back one column short
+TEST_F(TableTest, EmptyStringInLastColumnRoundTrips) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"note", "STRING"}};
+    Table table = makeTable("test_empty_last", schema);
+
+    ASSERT_TRUE(table.insertRow({{"1", ""}}).has_value());
+
+    auto rows = table.selectRow(nullptr);
+    ASSERT_EQ(rows.size(), 1u);
+    ASSERT_EQ(rows[0].values.size(), 2u);
+    EXPECT_EQ(rows[0].values[1], "");
 }

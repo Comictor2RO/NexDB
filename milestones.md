@@ -124,8 +124,58 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
 - **CI simplu** (GitHub Actions) care rulează `tests/` la fiecare push — înainte să depinzi de pachete.
 
 ### Inconsistențe reale
-- **CREATE TABLE no-op silențios** — asta e bug. Catalog::createTable (Catalog/Catalog.cpp:23-24) face return fără nimic dacă numele există sau dacă lista de coloane e goală, iar serverul răspunde {"type":"ok"}. Se comportă ca IF NOT EXISTS fără ca cineva să fi cerut asta, și e asimetric față de DROP TABLE care aruncă eroare (Engine.cpp:69). Clientul nu poate distinge "am creat tabelul" de "exista deja cu altă schemă".
-- **BOOLEAN/TEXT** — inconsistență internă: Table::validateValueForType le acceptă, parserul le respinge. Cod mort, nu bug funcțional.
+- ✅ **CREATE TABLE no-op silențios** *(rezolvat)* — `Catalog::createTable` întoarce acum `bool`
+  (`false` dacă numele există sau lista e goală; verificarea și inserarea sub același lock, deci
+  atomic), iar `Engine::executeCreate` aruncă `Table <name> already exists` la `false` — simetric
+  cu `DROP TABLE`. Prin rețea clientul primește `{"type":"error",...}`, schema veche rămâne
+  neatinsă. Testele concurente din Catalog nu se schimbă (Catalog nu aruncă). `HandshakeTestServer`
+  șterge acum fișierele și *înainte* de a deschide engine-ul, ca un rest de la o rulare picată să
+  nu facă `CREATE TABLE` să eșueze. Docs: `CLIENT_PROTOCOL.md` §7.5 rescris, README actualizat.
+  Teste: `EngineTest.CreateExistingTableThrowsAndKeepsSchema`,
+  `NetworkServerTest.CreateExistingTableReturnsError` (26), plus `EXPECT_TRUE/FALSE` pe valoarea
+  întoarsă în `CatalogTest` 7 și 10. Ambele teste noi pică pe comportamentul vechi (verificat).
+  Descrierea originală, pentru context:
+  **CREATE TABLE no-op silențios** — asta e bug. Catalog::createTable (Catalog/Catalog.cpp:23-24) face return fără nimic dacă numele există sau dacă lista de coloane e goală, iar serverul răspunde {"type":"ok"}. Se comportă ca IF NOT EXISTS fără ca cineva să fi cerut asta, și e asimetric față de DROP TABLE care aruncă eroare (Engine.cpp:69). Clientul nu poate distinge "am creat tabelul" de "exista deja cu altă schemă".
+- ✅ **BOOLEAN/TEXT** *(rezolvat — aliasuri reale)* — `Parser::parseCreate` folosește un helper
+  `canonicalColumnType` care acceptă `TEXT` / `BOOLEAN` (orice majuscule) pe poziția de tip și le
+  normalizează la `STRING` / `BOOL` înainte de catalog. Intenționat **nu** sunt keyword-uri în
+  lexer: ar fi rezervat cuvintele și ar fi spart coloane numite `text` / `boolean`. Fiindcă
+  normalizarea se face în parser, ramurile `"BOOLEAN"` / `"TEXT"` din `Table::validateValueForType`
+  au fost șterse (rămâneau cod mort), la fel și ramura moartă `type == "NULL"`.
+  Teste: `ParserTest` 14–16 (normalizare, `text`/`boolean` ca nume de coloane, tip necunoscut tot
+  eroare), `EngineTest.TypeAliasesAreStoredAsCanonicalTypes`. Docs: `CLIENT_PROTOCOL.md` §5.1, §6.1, README.
+  Descrierea originală, pentru context:
+  **BOOLEAN/TEXT** — inconsistență internă: Table::validateValueForType le acceptă, parserul le respinge. Cod mort, nu bug funcțional.
+- ✅ **NULL adevărat** *(rezolvat)* — `using Value = std::optional<std::string>` în `AST/Row/Row.hpp`
+  (`std::nullopt` = SQL NULL); `Row`, `InsertStatement`, assignments din `UpdateStatement` și
+  `Condition::value` folosesc `Value`. Lexer: `NULL`/`IS`/`NOT` devin keyword-uri. Parser: helper
+  `parseValue()` (NULL nequotat → nullopt, `'NULL'` → string) folosit în INSERT/UPDATE/WHERE, plus
+  `col IS [NOT] NULL` (op `"IS NULL"`/`"IS NOT NULL"`). `validateValueForType` acceptă NULL pentru
+  orice tip. Storage/WAL: marker `%N` prin `encodeValue`/`decodeValue` (`StringUtils.hpp`) —
+  `walEncode` scrie `%` doar urmat de 2 cifre hex, deci nu există coliziune. WHERE: orice
+  comparație cu NULL e falsă (inclusiv `!=`), `= NULL` nu se potrivește cu nimic. Index: NULL în
+  prima coloană INT e permis, fără intrare în index. Pe fir: `null` JSON, nu `"NULL"`
+  (`PROTOCOL_VERSION` rămâne `1.0.0`, nimic publicat încă). GUI afișează `NULL`.
+  Bug-uri reparate pe drum: (1) replay-ul WAL construia `VALUES (1,Alice Smith)` fără ghilimele —
+  orice string cu spațiu/virgulă/`'`/gol pica la parsare și rândul se pierdea; acum `sqlLiteral`
+  quotează tot. (2) `''` era eroare de parsare (verificare pe text gol în loc de tip token).
+  (3) `split` arunca un câmp gol de la final, deci `''` în ultima coloană revenea cu o coloană
+  lipsă; nou `splitFields` pentru datele de rând. (4) `UpdateStatement::condition` neinițializat
+  → `delete` pe pointer garbage la `UPDATE` fără `WHERE`.
+  Teste: `LexerTest` 16, `ParserTest` 17–21, `TableTest` 11–14, `EngineTest` 18–21,
+  `WALManagerTest` 10, `WALRecoveryTest` 11–13, `NetworkServerTest` 27. Verificate prin mutații
+  (replay fără ghilimele, `"NULL"` pe fir, `split` vechi → testele lor pică).
+  Docs: `CLIENT_PROTOCOL.md` §4, §5.3, §5.4, §6.1, §6.2, §10; README.
+  Descrierea originală, pentru context:
+  **NULL nu e un NULL adevărat** — nu există un caz special pentru NULL nicăieri:
+  `validateValueForType("NULL", "INT")` ajunge pe ramura INT și pică la `N`. Deci în `INT`/`FLOAT`/`BOOL`
+  un `INSERT ... NULL` dă eroare de tip, iar în `STRING` e stocat ca textul `"NULL"`, identic cu
+  `'NULL'`. `CLIENT_PROTOCOL.md` §5.3 documentează deja asta, dar **README-ul încă minte**: zice
+  „NULL values can be inserted into any column regardless of type” (secțiunea FLOAT/BOOL și sub
+  lista de tipuri), iar exemplul `INSERT INTO products VALUES (2, 'Out of stock', NULL, false)`
+  ar eșua (NULL într-o coloană FLOAT). Un NULL real e o funcționalitate separată: marker în
+  storage, sărit la validare, comparații în WHERE, și `null` în JSON-ul de pe fir (deci atinge
+  și protocolul — mai bine înainte de pachete).
 
 ### Bug-uri adevărate în NetworkServer.cpp
    Fiindcă tot revii la fișierul ăsta — astea sunt problemele reale din el:

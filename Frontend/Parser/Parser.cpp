@@ -1,5 +1,28 @@
 #include "Parser.hpp"
 #include <memory>
+#include <cctype>
+
+// Maps a column type token to the name stored in the catalog, or "" if it is not a type.
+// TEXT and BOOLEAN are aliases: normalizing them here means the catalog, and every type
+// comparison downstream, only ever sees INT, STRING, FLOAT and BOOL.
+// The aliases are deliberately not lexer keywords, which would reserve the words and
+// break columns named "text" or "boolean"; they arrive as identifiers instead.
+static std::string canonicalColumnType(const Token &token)
+{
+    if (token.type != TokenType::KEYWORD && token.type != TokenType::IDENTIFIER)
+        return "";
+
+    std::string upper = token.value;
+    for (char &c : upper)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+    if (token.type == TokenType::KEYWORD)
+        return (upper == "INT" || upper == "STRING" || upper == "FLOAT" || upper == "BOOL") ? upper : "";
+
+    if (upper == "TEXT")    return "STRING";
+    if (upper == "BOOLEAN") return "BOOL";
+    return "";
+}
 
 Parser::Parser(const std::vector<Token> &tokens)
     : tokens(tokens), position(0)
@@ -69,9 +92,10 @@ std::expected<std::unique_ptr<CreateStatement>, ParseError> Parser::parseCreate(
         if (col.name.empty())
             return std::unexpected(ParseError::InvalidIdentifier);
 
-        col.type = expectToken(TokenType::KEYWORD);
-        if (col.type != "INT" && col.type != "STRING" && col.type != "FLOAT" && col.type != "BOOL")
+        col.type = canonicalColumnType(currentToken());
+        if (col.type.empty())
             return std::unexpected(ParseError::InvalidType);
+        consumeToken();
 
         columns.push_back(col);
 
@@ -149,7 +173,7 @@ std::expected<std::unique_ptr<SelectStatement>, ParseError> Parser::parseSelect(
 std::expected<std::unique_ptr<InsertStatement>, ParseError> Parser::parseInsert()
 {
     std::string table;
-    std::vector<std::string> values;
+    std::vector<Value> values;
     std::vector<std::string> columns;
 
     if (!expectToken(TokenType::KEYWORD, "INSERT"))
@@ -195,18 +219,11 @@ std::expected<std::unique_ptr<InsertStatement>, ParseError> Parser::parseInsert(
 
     while (true)
     {
-        std::string val;
-        if (currentToken().type == TokenType::NUMBER)
-            val = expectToken(TokenType::NUMBER);
-        else if (currentToken().type == TokenType::STRING)
-            val = expectToken(TokenType::STRING);
-        else if (currentToken().type == TokenType::IDENTIFIER)
-            val = expectToken(TokenType::IDENTIFIER);
-        
-        if (val.empty())
-            return std::unexpected(ParseError::UnexpectedToken);
+        auto val = parseValue();
+        if (!val)
+            return std::unexpected(val.error());
 
-        values.push_back(val);
+        values.push_back(std::move(val.value()));
 
         if (currentToken().value == ")")
             break;
@@ -297,15 +314,11 @@ std::expected<std::unique_ptr<UpdateStatement>, ParseError> Parser::parseUpdate(
         if (!expectToken(TokenType::OPERATOR, "="))
             return std::unexpected(ParseError::UnexpectedToken);
 
-        std::string value = expectToken(TokenType::STRING);
-        if (value.empty())
-            value = expectToken(TokenType::NUMBER);
-        if (value.empty())
-            value = expectToken(TokenType::IDENTIFIER);
-        if (value.empty())
-            return std::unexpected(ParseError::UnexpectedToken);
+        auto value = parseValue();
+        if (!value)
+            return std::unexpected(value.error());
 
-        stmt->addAssignements(column, value);
+        stmt->addAssignements(column, value.value());
 
         if (expectToken(TokenType::PUNCTUATION, ","))
             continue;
@@ -333,26 +346,57 @@ std::expected<Condition*, ParseError> Parser::parseCondition()
     if (column.empty())
         return std::unexpected(ParseError::InvalidIdentifier);
 
+    // col IS NULL / col IS NOT NULL
+    if (expectToken(TokenType::KEYWORD, "IS"))
+    {
+        bool negated = expectToken(TokenType::KEYWORD, "NOT");
+        if (!expectToken(TokenType::KEYWORD, "NULL"))
+            return std::unexpected(ParseError::UnexpectedToken);
+
+        Condition *condition = new Condition();
+        condition->column = column;
+        condition->op = negated ? "IS NOT NULL" : "IS NULL";
+        condition->value = std::nullopt;
+        return condition;
+    }
+
     std::string op = expectToken(TokenType::OPERATOR);
     if (op.empty())
         return std::unexpected(ParseError::UnexpectedToken);
 
-    std::string value;
-    if (currentToken().type == TokenType::STRING)
-        value = expectToken(TokenType::STRING);
-    else if (currentToken().type == TokenType::NUMBER)
-        value = expectToken(TokenType::NUMBER);
-    else if (currentToken().type == TokenType::IDENTIFIER)
-        value = expectToken(TokenType::IDENTIFIER);
-    
-    if (value.empty())
-        return std::unexpected(ParseError::UnexpectedToken);
+    // col = NULL is accepted, but by SQL rules it matches no row (see evaluateCondition)
+    auto value = parseValue();
+    if (!value)
+        return std::unexpected(value.error());
 
     Condition *condition = new Condition();
     condition->column = column;
     condition->op = op;
-    condition->value = value;
+    condition->value = value.value();
     return condition;
+}
+
+// A single literal value: NULL (the keyword, unquoted) becomes std::nullopt, while
+// 'NULL' in quotes stays the string "NULL". Checks the token type rather than the
+// text, so the empty string '' is a valid value.
+std::expected<Value, ParseError> Parser::parseValue()
+{
+    Token token = currentToken();
+
+    if (token.type == TokenType::KEYWORD && token.value == "NULL")
+    {
+        consumeToken();
+        return Value(std::nullopt);
+    }
+
+    if (token.type == TokenType::STRING || token.type == TokenType::NUMBER
+        || token.type == TokenType::IDENTIFIER)
+    {
+        consumeToken();
+        return token.value;
+    }
+
+    return std::unexpected(ParseError::UnexpectedToken);
 }
 
 std::expected<std::unique_ptr<CreateDatabaseStatement>, ParseError> Parser::parseCreateDatabase()

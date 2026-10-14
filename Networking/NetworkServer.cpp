@@ -418,7 +418,8 @@ std::string NetworkServer::executeQuery(std::string &query)
             result += "[";
             for (size_t i = 0; i < row.values.size(); i++) {
                 if (i > 0) result += ",";
-                result += jsonEscape(row.values[i]);
+                // SQL NULL is a bare JSON null; every other value is a JSON string
+                result += row.values[i] ? jsonEscape(*row.values[i]) : "null";
             }
             result += "]";
         }

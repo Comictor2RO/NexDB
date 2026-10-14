@@ -1,10 +1,10 @@
 #include "InsertStatement.hpp"
 
 //Constructors
-InsertStatement::InsertStatement(std::string table, std::vector<std::string> values)
+InsertStatement::InsertStatement(std::string table, std::vector<Value> values)
     : table(table), columns({}),values(values)
 {}
-InsertStatement::InsertStatement(std::string table, std::vector<std::string> columns, std::vector<std::string> values)
+InsertStatement::InsertStatement(std::string table, std::vector<std::string> columns, std::vector<Value> values)
     :table(table), columns(columns), values(values)
 {}
 
@@ -18,7 +18,7 @@ void InsertStatement::setTable(const std::string &table)
     this->table = table;
 }
 
-void InsertStatement::setValues(const std::vector<std::string> &values)
+void InsertStatement::setValues(const std::vector<Value> &values)
 {
     this->values = values;
 }
@@ -34,7 +34,7 @@ std::string InsertStatement::getTable() const
     return this->table;
 }
 
-std::vector<std::string> InsertStatement::getValues() const
+std::vector<Value> InsertStatement::getValues() const
 {
     return this->values;
 }

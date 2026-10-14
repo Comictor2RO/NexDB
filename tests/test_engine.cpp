@@ -212,3 +212,113 @@ TEST_F(EngineTest, DropActiveDatabaseGuardIgnoresCase) {
         EXPECT_NE(std::string(e.what()).find("currently active"), std::string::npos);
     }
 }
+
+//Test 16: CREATE TABLE on a taken name errors, symmetric with DROP TABLE on a missing one,
+//and leaves the existing schema untouched. It used to answer ok and silently keep the old one
+TEST_F(EngineTest, CreateExistingTableThrowsAndKeepsSchema) {
+    engine->query("CREATE TABLE eng_dup (id INT, name STRING)");
+
+    try {
+        engine->query("CREATE TABLE eng_dup (email STRING)");
+        FAIL() << "Expected CREATE TABLE on an existing name to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("already exists"), std::string::npos) << e.what();
+    }
+
+    auto cols = engine->getCatalog().getColumns("eng_dup");
+    ASSERT_EQ(cols.size(), 2u);
+    EXPECT_EQ(cols[0].name, "id");
+    EXPECT_EQ(cols[1].name, "name");
+}
+
+//Test 17: TEXT and BOOLEAN work end to end and are stored as their canonical names
+TEST_F(EngineTest, TypeAliasesAreStoredAsCanonicalTypes) {
+    engine->query("CREATE TABLE eng_alias (id INT, note TEXT, active BOOLEAN)");
+
+    auto cols = engine->getCatalog().getColumns("eng_alias");
+    ASSERT_EQ(cols.size(), 3u);
+    EXPECT_EQ(cols[1].type, "STRING");
+    EXPECT_EQ(cols[2].type, "BOOL");
+
+    engine->query("INSERT INTO eng_alias VALUES (1, 'hello', true)");
+    EXPECT_THROW(engine->query("INSERT INTO eng_alias VALUES (2, 'x', maybe)"), std::runtime_error);
+
+    auto rows = engine->query("SELECT * FROM eng_alias");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[1], "hello");
+    EXPECT_EQ(rows[0].values[2], "true");
+}
+
+//Test 18: unquoted NULL goes into any column type, 'NULL' stays text; the README example
+//with NULL in a FLOAT column used to fail with a type error
+TEST_F(EngineTest, NullInsertsIntoEveryTypeAndDiffersFromQuotedNull) {
+    engine->query("CREATE TABLE eng_null (id INT, name STRING, price FLOAT, active BOOL)");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_null VALUES (1, NULL, NULL, NULL)"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_null VALUES (2, 'NULL', 1.5, true)"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_null VALUES (3, 'Out of stock', NULL, false)"));
+
+    auto rows = engine->query("SELECT * FROM eng_null");
+    ASSERT_EQ(rows.size(), 3u);
+    EXPECT_FALSE(rows[0].values[1].has_value());
+    EXPECT_FALSE(rows[0].values[2].has_value());
+    EXPECT_FALSE(rows[0].values[3].has_value());
+    ASSERT_TRUE(rows[1].values[1].has_value());
+    EXPECT_EQ(*rows[1].values[1], "NULL");
+    EXPECT_FALSE(rows[2].values[2].has_value());
+}
+
+//Test 19: IS NULL finds the real NULLs only, = NULL finds nothing, = 'NULL' finds the text
+TEST_F(EngineTest, WhereIsNullVersusEqualsNull) {
+    engine->query("CREATE TABLE eng_nullw (id INT, name STRING)");
+    engine->query("INSERT INTO eng_nullw VALUES (1, NULL)");
+    engine->query("INSERT INTO eng_nullw VALUES (2, 'NULL')");
+    engine->query("INSERT INTO eng_nullw VALUES (3, 'Bob')");
+
+    auto isNull = engine->query("SELECT id FROM eng_nullw WHERE name IS NULL");
+    ASSERT_EQ(isNull.size(), 1u);
+    EXPECT_EQ(isNull[0].values[0], "1");
+
+    EXPECT_EQ(engine->query("SELECT * FROM eng_nullw WHERE name IS NOT NULL").size(), 2u);
+    EXPECT_EQ(engine->query("SELECT * FROM eng_nullw WHERE name = NULL").size(), 0u);
+
+    auto text = engine->query("SELECT id FROM eng_nullw WHERE name = 'NULL'");
+    ASSERT_EQ(text.size(), 1u);
+    EXPECT_EQ(text[0].values[0], "2");
+
+    // NULL != 'Bob' is not true, so row 1 is not included
+    EXPECT_EQ(engine->query("SELECT * FROM eng_nullw WHERE name != 'Bob'").size(), 1u);
+}
+
+//Test 20: UPDATE ... SET col = NULL stores a real NULL, and DELETE ... WHERE IS NULL
+//removes exactly those rows
+TEST_F(EngineTest, UpdateToNullAndDeleteWhereIsNull) {
+    engine->query("CREATE TABLE eng_nullu (id INT, score INT)");
+    engine->query("INSERT INTO eng_nullu VALUES (1, 10)");
+    engine->query("INSERT INTO eng_nullu VALUES (2, 20)");
+
+    engine->query("UPDATE eng_nullu SET score = NULL WHERE id = 1");
+    auto rows = engine->query("SELECT * FROM eng_nullu WHERE id = 1");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_FALSE(rows[0].values[1].has_value());
+
+    engine->query("DELETE FROM eng_nullu WHERE score IS NULL");
+    auto left = engine->query("SELECT * FROM eng_nullu");
+    ASSERT_EQ(left.size(), 1u);
+    EXPECT_EQ(left[0].values[0], "2");
+}
+
+//Test 21: NULL in the indexed first INT column; indexed lookups still work for the rest
+TEST_F(EngineTest, NullInFirstIntColumnIsAllowed) {
+    engine->query("CREATE TABLE eng_nullpk (id INT, name STRING)");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_nullpk VALUES (NULL, 'ghost')"));
+    engine->query("INSERT INTO eng_nullpk VALUES (7, 'Alice')");
+
+    auto byId = engine->query("SELECT name FROM eng_nullpk WHERE id = 7");
+    ASSERT_EQ(byId.size(), 1u);
+    EXPECT_EQ(byId[0].values[0], "Alice");
+
+    EXPECT_EQ(engine->query("SELECT * FROM eng_nullpk WHERE id = NULL").size(), 0u);
+    auto ghost = engine->query("SELECT name FROM eng_nullpk WHERE id IS NULL");
+    ASSERT_EQ(ghost.size(), 1u);
+    EXPECT_EQ(ghost[0].values[0], "ghost");
+}

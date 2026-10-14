@@ -27,12 +27,12 @@ class Table {
         std::vector<Row> selectRow(Condition *cond);
         void deleteRow(Condition *cond);
         void dropStorage();
-        void updateRow(Condition *cond, const std::vector<std::pair<std::string,std::string>> &assignemets);
+        void updateRow(Condition *cond, const std::vector<std::pair<std::string,Value>> &assignemets);
 
         // Returns the rows that would remain after the operation, without touching storage.
         // For previewUpdate: returns empty if validation fails or no rows match.
         std::vector<Row> previewDelete(Condition *cond);
-        std::vector<Row> previewUpdate(Condition *cond, const std::vector<std::pair<std::string,std::string>> &assignments);
+        std::vector<Row> previewUpdate(Condition *cond, const std::vector<std::pair<std::string,Value>> &assignments);
 
     private:
         std::string name;
@@ -42,7 +42,7 @@ class Table {
         int nextKey = 0;
 
         int getColumnIndex(const std::string &columnName) const;
-        bool validateValueForType(const std::string &value, const std::string &type) const;
+        bool validateValueForType(const Value &value, const std::string &type) const;
         bool validateRowAgainstSchema(const Row &row) const;
 
         void rebuildIndex();

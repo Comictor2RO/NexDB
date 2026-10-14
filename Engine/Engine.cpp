@@ -75,7 +75,10 @@ void Engine::execute(Statement *statement)
 
 void Engine::executeCreate(const CreateStatement &stmt)
 {
-    catalog->createTable(stmt.getTable(), stmt.getColumns());
+    // createTable also refuses an empty column list, but the parser already rejects
+    // that, so a false result here always means the name is taken.
+    if (!catalog->createTable(stmt.getTable(), stmt.getColumns()))
+        throw std::runtime_error("Table " + stmt.getTable() + " already exists");
 }
 
 void Engine::executeDrop(const DropStatement &stmt)

@@ -17,14 +17,15 @@ bool Catalog::tableExists(const std::string &name) const
     return columns.find(name) != columns.end();
 }
 
-void Catalog::createTable(const std::string &name, const std::vector<Columns> &columns)
+bool Catalog::createTable(const std::string &name, const std::vector<Columns> &columns)
 {
     std::unique_lock lock(mutex);
     if (this->columns.count(name) || columns.empty())
-        return;
+        return false;
     this->columns[name] = columns;
     tableIds[name] = nextTableId++;
     save();
+    return true;
 }
 
 void Catalog::dropTable(const std::string &name)

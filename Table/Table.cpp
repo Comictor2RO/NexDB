@@ -11,7 +11,12 @@ int Table::getColumnIndex(const std::string &columnName) const
     }
     return -1;
 }
-bool Table::validateValueForType(const std::string &value, const std::string &type) const {
+// value is the raw text a user typed; NULL is valid for every type
+bool Table::validateValueForType(const Value &maybeValue, const std::string &type) const {
+    if (!maybeValue)
+        return true;
+    const std::string &value = *maybeValue;
+
     if (type == "INT")
     {
         if (value.empty())
@@ -59,18 +64,15 @@ bool Table::validateValueForType(const std::string &value, const std::string &ty
         return true;
     }
 
-    if (type == "BOOL" || type == "BOOLEAN") {
+    // Only the four canonical names reach here: the parser maps BOOLEAN / TEXT
+    // to BOOL / STRING before the schema is stored.
+    if (type == "BOOL") {
         return value == "true" || value == "false"
                 || value == "1" || value == "0"
                 || value == "TRUE" || value == "FALSE";
     }
 
-    if (type == "NULL") {
-        return value == "NULL" || value == "null";
-    }
-
-
-    if (type == "STRING" || type == "TEXT")
+    if (type == "STRING")
         return true;
     return false;
 }
@@ -106,15 +108,26 @@ static bool evaluateCondition(const Condition *cond, const Row &row, const std::
     if (row.values.empty() || colIndex >= (int)row.values.size())
         return false;
 
-    const std::string &rowValue = row.values[colIndex];
+    const Value &rowValue = row.values[colIndex];
 
-    if (cond->op == "=")  return rowValue == cond->value;
-    if (cond->op == "!=") return rowValue != cond->value;
+    if (cond->op == "IS NULL")     return !rowValue.has_value();
+    if (cond->op == "IS NOT NULL") return rowValue.has_value();
+
+    // Any comparison involving NULL is unknown in SQL, so it never matches,
+    // including != (NULL != 5 is not true)
+    if (!rowValue || !cond->value)
+        return false;
+
+    const std::string &left = *rowValue;
+    const std::string &right = *cond->value;
+
+    if (cond->op == "=")  return left == right;
+    if (cond->op == "!=") return left != right;
     try {
-        if (cond->op == ">")  return std::stod(rowValue) > std::stod(cond->value);
-        if (cond->op == "<")  return std::stod(rowValue) < std::stod(cond->value);
-        if (cond->op == ">=") return std::stod(rowValue) >= std::stod(cond->value);
-        if (cond->op == "<=") return std::stod(rowValue) <= std::stod(cond->value);
+        if (cond->op == ">")  return std::stod(left) > std::stod(right);
+        if (cond->op == "<")  return std::stod(left) < std::stod(right);
+        if (cond->op == ">=") return std::stod(left) >= std::stod(right);
+        if (cond->op == "<=") return std::stod(left) <= std::stod(right);
     } catch (...) { return false; }
     return false;
 }
@@ -143,7 +156,7 @@ std::expected<void, TableError> Table::insertRow(const Row &row)
     std::string serialized;
     for (int i = 0; i < (int)row.values.size(); i++)
     {
-        serialized += walEncode(row.values[i]);
+        serialized += encodeValue(row.values[i]);
         if (i + 1 < (int)row.values.size())
             serialized += "|";
     }
@@ -153,12 +166,13 @@ std::expected<void, TableError> Table::insertRow(const Row &row)
     if (!res.success)
         return std::unexpected(TableError::PAGE_MANAGER_FULL);
 
-    // Index first INT column as primary key
-    if (!row.values.empty() && !scheme.empty() && scheme[0].type == "INT")
+    // Index first INT column as primary key. A NULL key gets no index entry:
+    // WHERE id = x never matches it anyway, and IS NULL always does a full scan.
+    if (!row.values.empty() && row.values[0] && !scheme.empty() && scheme[0].type == "INT")
     {
         try
         {
-            int key = std::stoi(row.values[0]);
+            int key = std::stoi(*row.values[0]);
             index.insert(key, res.pageId, res.rowIndex);
         }
         catch (...)
@@ -178,9 +192,12 @@ std::vector<Row> Table::selectRow(Condition *cond)
         !scheme.empty() && cond->column == scheme[0].name &&
         scheme[0].type == "INT")
     {
+        // id = NULL matches nothing
+        if (!cond->value)
+            return {};
         try
         {
-            int key = std::stoi(cond->value);
+            int key = std::stoi(*cond->value);
             auto record = index.search(key);
             if (record.has_value())
             {
@@ -190,9 +207,8 @@ std::vector<Row> Table::selectRow(Condition *cond)
                 if (localIndex >= 0 && localIndex < (int)pageRows.size())
                 {
                     Row row;
-                    row.values = split(pageRows[localIndex], '|');
-                    for (auto &v : row.values)
-                        v = walDecode(v);
+                    for (const auto &field : splitFields(pageRows[localIndex], '|'))
+                        row.values.push_back(decodeValue(field));
                     return { row };
                 }
                 else
@@ -216,9 +232,8 @@ std::vector<Row> Table::selectRow(Condition *cond)
     for (const auto &raw : rawRows)
     {
         Row row;
-        row.values = split(raw, '|');
-        for (auto &v : row.values)
-            v = walDecode(v);
+        for (const auto &field : splitFields(raw, '|'))
+            row.values.push_back(decodeValue(field));
         if (cond == nullptr || evaluateCondition(cond, row, scheme))
             result.push_back(row);
     }
@@ -240,7 +255,7 @@ std::vector<Row> Table::previewDelete(Condition *cond)
 }
 
 std::vector<Row> Table::previewUpdate(Condition *cond,
-    const std::vector<std::pair<std::string, std::string>> &assignments)
+    const std::vector<std::pair<std::string, Value>> &assignments)
 {
     for (const auto &a : assignments)
     {
@@ -283,7 +298,7 @@ void Table::deleteRow(Condition *cond)
         insertRow(row);
 }
 
-void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, std::string>> &assignmets)
+void Table::updateRow(Condition *cond, const std::vector<std::pair<std::string, Value>> &assignmets)
 {
     std::vector<Row> newState = previewUpdate(cond, assignmets);
     if (newState.empty())
@@ -317,14 +332,13 @@ void Table::rebuildIndex()
         for (int r = 0; r < (int)rows.size(); r++)
         {
             Row row;
-            row.values = split(rows[r], '|');
-            for (auto &v : row.values)
-                v = walDecode(v);
-            if (!row.values.empty() && !scheme.empty() && scheme[0].type == "INT")
+            for (const auto &field : splitFields(rows[r], '|'))
+                row.values.push_back(decodeValue(field));
+            if (!row.values.empty() && row.values[0] && !scheme.empty() && scheme[0].type == "INT")
             {
                 try
                 {
-                    int key = std::stoi(row.values[0]);
+                    int key = std::stoi(*row.values[0]);
                     index.insert(key, gid, r);
                 }
                 catch (...) {}

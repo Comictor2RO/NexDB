@@ -34,7 +34,8 @@ Token Lexer::readWord()
         || uppercaseWord == "VALUES" || uppercaseWord == "CREATE" || uppercaseWord == "TABLE"
         || uppercaseWord == "INT" || uppercaseWord == "STRING" || uppercaseWord == "DROP"
         || uppercaseWord == "UPDATE" || uppercaseWord == "SET" || uppercaseWord == "USE"
-        || uppercaseWord == "DATABASE" || uppercaseWord == "FLOAT" || uppercaseWord == "BOOL")
+        || uppercaseWord == "DATABASE" || uppercaseWord == "FLOAT" || uppercaseWord == "BOOL"
+        || uppercaseWord == "NULL" || uppercaseWord == "IS" || uppercaseWord == "NOT")
     {
         return {TokenType::KEYWORD, uppercaseWord};
     }

@@ -4,32 +4,33 @@
 #include "../Statement/Statement.hpp"
 #include <vector>
 #include <string>
+#include "../Row/Row.hpp"
 
 class InsertStatement : public Statement{
     public:
         //Constructors
-        InsertStatement(std::string table, std::vector<std::string> values);
+        InsertStatement(std::string table, std::vector<Value> values);
         InsertStatement(std::string table, std::vector<std::string> columns,
-             std::vector<std::string> values);
+             std::vector<Value> values);
 
         //Execute
         void execute() override;
 
         //Setters
         void setTable(const std::string &table);
-        void setValues(const std::vector<std::string> &values);
+        void setValues(const std::vector<Value> &values);
         void setColumns(const std::vector<std::string> &columns);
 
         //Getters
         std::string getTable() const;
-        std::vector<std::string> getValues() const;
+        std::vector<Value> getValues() const;
         std::vector<std::string> getColumns() const;
 
         //Destructor
         ~InsertStatement() override;
     private:
         std::string table;
-        std::vector<std::string> values;
+        std::vector<Value> values;
         std::vector<std::string> columns;
 };
 

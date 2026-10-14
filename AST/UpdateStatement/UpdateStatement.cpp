@@ -1,14 +1,14 @@
 #include "UpdateStatement.hpp"
 
 UpdateStatement::UpdateStatement(std::string &table)
-    : table(table), assignments()
+    : table(table), assignments(), condition(nullptr)
 {}
 
 //Methods
 void UpdateStatement::execute()
 {}
 
-void UpdateStatement::addAssignements(const std::string &column, const std::string &value)
+void UpdateStatement::addAssignements(const std::string &column, const Value &value)
 {
     assignments.emplace_back(column, value);
 }
@@ -19,7 +19,7 @@ std::string UpdateStatement::getTable() const
     return table;
 }
 
-const std::vector<std::pair<std::string, std::string>> &UpdateStatement::getAssignments() const
+const std::vector<std::pair<std::string, Value>> &UpdateStatement::getAssignments() const
 {
     return assignments;
 }
@@ -35,7 +35,7 @@ void UpdateStatement::setTable(const std::string &table)
     this->table = table;
 }
 
-void UpdateStatement::setAssignments(const std::vector<std::pair<std::string, std::string>> &assignments)
+void UpdateStatement::setAssignments(const std::vector<std::pair<std::string, Value>> &assignments)
 {
     this->assignments = assignments;
 }

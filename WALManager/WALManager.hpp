@@ -5,6 +5,7 @@
 #include <fstream>
 #include <vector>
 #include "../AST/Condition/Condition.hpp"
+#include "../AST/Row/Row.hpp"
 
 struct WALEntry {
     std::string type;
@@ -19,12 +20,12 @@ class WALManager {
 public:
     WALManager(std::string filename);
 
-    void logInsert(const std::string &table, const std::vector<std::string> &values);
+    void logInsert(const std::string &table, const std::vector<Value> &values);
     void logDelete(const std::string &table, const Condition *condition);
     void logUpdate(const std::string &table, const Condition *condition,
-                   const std::vector<std::pair<std::string, std::string>> &assignments);
+                   const std::vector<std::pair<std::string, Value>> &assignments);
     void logReplaceBegin(const std::string &table, const Condition *condition);
-    void logReplaceRow(const std::string &table, const std::vector<std::string> &values);
+    void logReplaceRow(const std::string &table, const std::vector<Value> &values);
     void commit();
     void recover(Engine &engine);
 

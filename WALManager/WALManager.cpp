@@ -11,6 +11,33 @@
 #include <unistd.h>
 #endif
 
+// Rebuilds the WHERE clause of a logged condition ("col~op~value") as SQL.
+// IS NULL / IS NOT NULL carry no value, everything else gets a quoted literal.
+static std::string conditionSQL(const std::string &condData)
+{
+    std::vector<std::string> parts = splitFields(condData, '~');
+    if (parts.size() != 3)
+        return "";
+    std::string op = walDecode(parts[1]);
+    std::string sql = " WHERE " + walDecode(parts[0]) + " " + op;
+    if (op.rfind("IS", 0) != 0)
+        sql += " " + sqlLiteral(decodeValue(parts[2]));
+    return sql;
+}
+
+// Joins logged row fields into a VALUES list: NULL stays NULL, every other value is
+// quoted so spaces, commas, quotes and empty strings survive the replay.
+static std::string valuesSQL(const std::string &rowData)
+{
+    std::string csv;
+    std::vector<std::string> fields = splitFields(rowData, '|');
+    for (int k = 0; k < (int)fields.size(); k++) {
+        if (k > 0) csv += ",";
+        csv += sqlLiteral(decodeValue(fields[k]));
+    }
+    return csv;
+}
+
 static void syncFile(const std::string &filename)
 {
 #ifdef _WIN32
@@ -42,12 +69,12 @@ WALManager::WALManager(std::string filename)
     }
 }
 
-void WALManager::logInsert(const std::string &table, const std::vector<std::string> &values)
+void WALManager::logInsert(const std::string &table, const std::vector<Value> &values)
 {
     std::string rowData;
     for (int i = 0; i < (int)values.size(); i++) {
         if (i > 0) rowData += "|";
-        rowData += walEncode(values[i]);
+        rowData += encodeValue(values[i]);
     }
     file << "INSERT|" << table << "|" << rowData << "|0\n";
     file.flush();
@@ -57,23 +84,23 @@ void WALManager::logDelete(const std::string &table, const Condition *condition)
 {
     std::string condData;
     if (condition)
-        condData = walEncode(condition->column) + "~" + walEncode(condition->op) + "~" + walEncode(condition->value);
+        condData = walEncode(condition->column) + "~" + walEncode(condition->op) + "~" + encodeValue(condition->value);
     file << "DELETE|" << table << "|" << condData << "|0\n";
     file.flush();
 }
 
 void WALManager::logUpdate(const std::string &table, const Condition *condition,
-                           const std::vector<std::pair<std::string, std::string>> &assignments)
+                           const std::vector<std::pair<std::string, Value>> &assignments)
 {
     std::string condData;
     if (condition)
-        condData = walEncode(condition->column) + "~" + walEncode(condition->op) + "~" + walEncode(condition->value);
+        condData = walEncode(condition->column) + "~" + walEncode(condition->op) + "~" + encodeValue(condition->value);
 
     std::string assignData;
     for (const auto &a : assignments)
     {
         if (!assignData.empty()) assignData += "~";
-        assignData += walEncode(a.first) + "~" + walEncode(a.second);
+        assignData += walEncode(a.first) + "~" + encodeValue(a.second);
     }
 
     file << "UPDATE|" << table << "|" << condData << "|" << assignData << "|0\n";
@@ -84,17 +111,17 @@ void WALManager::logReplaceBegin(const std::string &table, const Condition *cond
 {
     std::string condData;
     if (condition)
-        condData = walEncode(condition->column) + "~" + walEncode(condition->op) + "~" + walEncode(condition->value);
+        condData = walEncode(condition->column) + "~" + walEncode(condition->op) + "~" + encodeValue(condition->value);
     file << "REPLACE_BEGIN|" << table << "|" << condData << "|0\n";
     file.flush();
 }
 
-void WALManager::logReplaceRow(const std::string &table, const std::vector<std::string> &values)
+void WALManager::logReplaceRow(const std::string &table, const std::vector<Value> &values)
 {
     std::string rowData;
     for (int i = 0; i < (int)values.size(); i++) {
         if (i > 0) rowData += "|";
-        rowData += walEncode(values[i]);
+        rowData += encodeValue(values[i]);
     }
     file << "REPLACE_ROW|" << table << "|" << rowData << "|0\n";
     file.flush();
@@ -176,13 +203,11 @@ void WALManager::recover(Engine &engine)
         if (e.type == "REPLACE_BEGIN")
         {
             // Collect the rows to restore from following REPLACE_ROW entries
-            std::vector<std::vector<std::string>> rows;
+            std::vector<std::string> rows;
             int j = i + 1;
             while (j < (int)entries.size() && entries[j].type == "REPLACE_ROW")
             {
-                std::vector<std::string> vals = split(entries[j].rowData, '|');
-                for (auto &v : vals) v = walDecode(v);
-                rows.push_back(std::move(vals));
+                rows.push_back(valuesSQL(entries[j].rowData));
                 j++;
             }
             i = j - 1;
@@ -194,15 +219,8 @@ void WALManager::recover(Engine &engine)
             replaySQL("DELETE FROM " + e.table, engine);
 
             // Re-insert the rows that should remain
-            for (const auto &vals : rows)
-            {
-                std::string csv;
-                for (int k = 0; k < (int)vals.size(); k++) {
-                    if (k > 0) csv += ",";
-                    csv += vals[k];
-                }
+            for (const auto &csv : rows)
                 replaySQL("INSERT INTO " + e.table + " VALUES (" + csv + ")", engine);
-            }
 
             engine.setRecoveryMode(false);
             commit();
@@ -213,23 +231,13 @@ void WALManager::recover(Engine &engine)
 
         if (e.type == "INSERT")
         {
-            std::vector<std::string> vals = split(e.rowData, '|');
-            std::string csv;
-            for (int k = 0; k < (int)vals.size(); k++) {
-                if (k > 0) csv += ",";
-                csv += walDecode(vals[k]);
-            }
-            sql = "INSERT INTO " + e.table + " VALUES (" + csv + ")";
+            sql = "INSERT INTO " + e.table + " VALUES (" + valuesSQL(e.rowData) + ")";
         }
         else if (e.type == "DELETE")
         {
             sql = "DELETE FROM " + e.table;
             if (!e.rowData.empty())
-            {
-                std::vector<std::string> parts = split(e.rowData, '~');
-                if (parts.size() == 3)
-                    sql += " WHERE " + walDecode(parts[0]) + " " + walDecode(parts[1]) + " " + walDecode(parts[2]);
-            }
+                sql += conditionSQL(e.rowData);
         }
         else if (e.type == "UPDATE")
         {
@@ -237,7 +245,7 @@ void WALManager::recover(Engine &engine)
             std::string condPart  = fields.size() > 0 ? fields[0] : "";
             std::string assignPart = fields.size() > 1 ? fields[1] : "";
 
-            std::vector<std::string> assigns = split(assignPart, '~');
+            std::vector<std::string> assigns = splitFields(assignPart, '~');
             if (assigns.size() < 2)
                 continue;
 
@@ -245,15 +253,11 @@ void WALManager::recover(Engine &engine)
             for (int k = 0; k + 1 < (int)assigns.size(); k += 2)
             {
                 if (k > 0) sql += ", ";
-                sql += walDecode(assigns[k]) + " = " + walDecode(assigns[k + 1]);
+                sql += walDecode(assigns[k]) + " = " + sqlLiteral(decodeValue(assigns[k + 1]));
             }
 
             if (!condPart.empty())
-            {
-                std::vector<std::string> cparts = split(condPart, '~');
-                if (cparts.size() == 3)
-                    sql += " WHERE " + walDecode(cparts[0]) + " " + walDecode(cparts[1]) + " " + walDecode(cparts[2]);
-            }
+                sql += conditionSQL(condPart);
         }
         else
             continue;

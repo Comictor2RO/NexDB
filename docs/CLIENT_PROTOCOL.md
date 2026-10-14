@@ -178,10 +178,11 @@ Rules that matter when writing the parser:
 - **Column order matches value order** in every row, so `dict(zip(columns, row))` is
   always correct. For `SELECT *` the order is the schema's declaration order; for an
   explicit list it is the order the user asked for.
-- **Every value is a JSON string.** There are no JSON numbers, booleans, or nulls in a
-  `rows` payload — the engine stores everything as text and `jsonEscape()` quotes it
-  unconditionally. `42` comes back as `"42"`, `true` as `"true"`, and SQL `NULL` as the
-  four-character string `"NULL"`.
+- **Every value is a JSON string or `null`.** There are no JSON numbers or booleans in a
+  `rows` payload — the engine stores everything as text and `jsonEscape()` quotes it.
+  `42` comes back as `"42"`, `true` as `"true"`. SQL `NULL` is the one exception: it comes
+  back as a bare JSON `null`, while the string `'NULL'` comes back as `"NULL"`, so
+  `["1",null]` and `["1","NULL"]` are different rows. Map `null` to `None` / `null`.
 - **Values are fully escaped**, including `\n`, `\r`, `\t`, `"`, `\\` and any control byte
   below 0x20 as `\uXXXX`. A value can safely contain `|`, a newline, or the literal text
   `END`. Any standard JSON parser handles the line correctly.
@@ -210,9 +211,10 @@ This is where most client bugs will come from. All four rules below are enforced
 | `BOOL` | one of `true`, `false`, `1`, `0`, `TRUE`, `FALSE` — nothing else |
 | `STRING` | anything, always accepted |
 
-`BOOLEAN` and `TEXT` are accepted by the validator but rejected by the parser at
-`CREATE TABLE`, which only allows `INT`, `STRING`, `FLOAT`, `BOOL`. Treat those four as
-the whole type system.
+`CREATE TABLE` also accepts `TEXT` and `BOOLEAN` (any case) as aliases. The parser
+normalizes them to `STRING` and `BOOL` before the schema is stored, so they never come
+back: the catalog, the validator and everything downstream only know the four types above.
+A client that declares `note TEXT` and later inspects the schema will see `STRING`.
 
 ### 5.2 `Python bool` is a trap
 
@@ -223,30 +225,32 @@ are, `True` is not. Any client that formats values must map booleans explicitly:
 'true' if value else 'false'
 ```
 
-### 5.3 NULL is not universal — the README is wrong here
+### 5.3 NULL
 
-The README claims *"NULL values can be inserted into any column regardless of type."*
-The code does not implement this. There is no NULL special case anywhere in
-`insertRow`; `validateValueForType("NULL", "INT")` walks the characters, hits `N`, and
-returns false. In practice:
+The unquoted keyword `NULL` (any case) is SQL NULL. It is valid in **every** column type,
+and it is a different value from the quoted string `'NULL'`:
 
-| Column type | `NULL` accepted? |
-|---|---|
-| `STRING` | yes — stored and returned as the literal string `"NULL"` |
-| `INT`, `FLOAT`, `BOOL` | **no** — `Type validation failed (invalid value for column type)` |
+| Written as | Stored as | Comes back as |
+|---|---|---|
+| `NULL` / `null` | SQL NULL | JSON `null` |
+| `'NULL'` | the 4-character string | JSON `"NULL"` (and only valid in a `STRING` column) |
 
-Do not advertise NULL support in the client API, and do not translate Python's `None` to
-`NULL` silently — it will fail on three of the four types. Either raise on `None` or
-require the caller to be explicit.
+Comparisons follow SQL rules: any comparison with NULL is unknown and **never matches**.
 
-### 5.4 Empty strings cannot be inserted
+- `WHERE col IS NULL` / `WHERE col IS NOT NULL` select by nullness.
+- `WHERE col = NULL` parses, but matches no row. Use `IS NULL`.
+- `WHERE col != 5` does **not** match rows where `col` is NULL.
+- `UPDATE t SET col = NULL` stores a real NULL.
 
-`INSERT INTO t VALUES (1, '')` is a **parse error**, not an empty value. `expectToken`
-returns `""` both for "no such token" and for "the token's value is the empty string", so
-the parser cannot tell them apart and reports `Unexpected token in query`. The same
-applies to an empty value in `UPDATE ... SET col = ''` and in a `WHERE` comparison.
+The first `INT` column is indexed (§7.3); a NULL there is allowed and simply gets no index
+entry. There is no `NOT NULL` constraint.
 
-If a client needs to represent emptiness, it has to pick a sentinel and document it.
+A client should translate `None` / `null` to the bare keyword `NULL`, and never quote it.
+
+### 5.4 Empty strings
+
+`INSERT INTO t VALUES (1, '')` stores an empty string, which is distinct from NULL and
+comes back as `""`. The same works in `UPDATE ... SET col = ''` and in a `WHERE` comparison.
 
 ### 5.5 Size limits
 
@@ -265,7 +269,10 @@ The encoding is internal — values round-trip, so a client never sees percent-e
 ### 6.1 Lexer behaviour
 
 - **Keywords are case-insensitive** (uppercased on read): `SELECT INSERT DELETE FROM WHERE
-  INTO VALUES CREATE TABLE INT STRING DROP UPDATE SET USE DATABASE FLOAT BOOL`.
+  INTO VALUES CREATE TABLE INT STRING DROP UPDATE SET USE DATABASE FLOAT BOOL NULL IS NOT`.
+  Being keywords, `null`, `is` and `not` cannot be used as table or column names.
+  The type aliases `TEXT` and `BOOLEAN` are **not** keywords: they are only recognized in
+  the type position of `CREATE TABLE`, so `text` and `boolean` remain valid column names.
 - **Identifiers keep their case** and are compared case-**sensitively** everywhere
   (table names, column names). `Users` and `users` are two different tables.
 - Identifiers match `[A-Za-z][A-Za-z0-9_]*` — they must start with a letter.
@@ -301,8 +308,9 @@ SELECT * | <col>[, <col>]* FROM <table> [WHERE <cond>]
 UPDATE <table> SET <col> = <val> [, <col> = <val>]* [WHERE <cond>]
 DELETE FROM <table> [WHERE <cond>]
 
-<cond> := <col> <op> <val>
+<cond> := <col> <op> <val> | <col> IS [NOT] NULL
 <op>   := = | != | < | > | <= | >=
+<val>  := <number> | '<string>' | <identifier> | NULL
 ```
 
 Anything after the end of a statement is `Unexpected tokens after end of statement`.
@@ -374,15 +382,16 @@ All three return `{"type": "ok"}`. The client cannot distinguish "updated 12 row
 do not invent a `rowcount` that always reads 0. If confirmation matters, follow the UPDATE
 with a SELECT.
 
-### 7.5 CREATE TABLE on an existing table is a silent no-op
+### 7.5 CREATE TABLE on an existing table is an error
 
-`Catalog::createTable` returns early if the name is taken, and the response is
-`{"type": "ok"}`. It behaves like `CREATE TABLE IF NOT EXISTS`, but with no error if the
-existing schema differs from the one requested. A client offering `create_table()` should
-verify the schema itself if that matters.
+`CREATE TABLE` on a name that is already taken returns
+`{"type": "error", "message": "Table <name> already exists"}` and leaves the existing table
+— schema and rows — untouched, whatever schema the new statement asked for. This mirrors
+`DROP TABLE` on a missing table, which returns `Table <name> does not exist`.
 
-Same for `DROP TABLE` on a missing table — except that one *does* error, from
-`Engine::executeDrop`.
+There is no `IF NOT EXISTS`. A client that wants an idempotent `create_table()` has to
+catch the `already exists` error itself, and, if the schema matters, compare it with the
+`columns` header of a `SELECT`.
 
 ### 7.6 USE switches the database for every client at once
 
@@ -551,10 +560,9 @@ Minimum for correctness:
 
 Worth surfacing in the client's own docs, because they will surprise users:
 
-- [ ] Values always come back as strings — including `"NULL"`
+- [ ] Values always come back as strings, except SQL NULL which is JSON `null`
 - [ ] Booleans must be sent as `true`/`false`, never Python's `True`
-- [ ] `NULL` only works in `STRING` columns
-- [ ] Empty strings cannot be stored
+- [ ] `NULL` is distinct from `'NULL'`; use `IS NULL`, since `= NULL` matches nothing
 - [ ] Negative numbers are silently stripped of their sign by the lexer
 - [ ] The `INSERT` column list is ignored — values are positional
 - [ ] `USE` affects every connected client

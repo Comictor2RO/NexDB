@@ -13,22 +13,22 @@ class UpdateStatement : public Statement{
 
         //Methods
         void execute() override;
-        void addAssignements(const std::string &column, const std::string &value);
+        void addAssignements(const std::string &column, const Value &value);
 
         //Getters
         std::string getTable() const;
-        const std::vector<std::pair<std::string, std::string>> &getAssignments() const;
+        const std::vector<std::pair<std::string, Value>> &getAssignments() const;
         Condition *getCondition() const;
 
         //Setters
         void setTable(const std::string &table);
-        void setAssignments(const std::vector<std::pair<std::string, std::string>> &assignments);
+        void setAssignments(const std::vector<std::pair<std::string, Value>> &assignments);
         void setCondition(Condition *condition);
 
         ~UpdateStatement() override;
 private:
         std::string table;
-        std::vector<std::pair<std::string, std::string>> assignments;
+        std::vector<std::pair<std::string, Value>> assignments;
         Condition *condition;
 };
 

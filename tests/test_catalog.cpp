@@ -83,8 +83,8 @@ TEST_F(CatalogTest, CreateDuplicateTable) {
     std::vector<Columns> schema = {{"id", "INT"}};
     std::vector<Columns> schema2 = {{"name", "STRING"}};
 
-    catalog.createTable("test_duplicate", schema);
-    catalog.createTable("test_duplicate", schema2);
+    EXPECT_TRUE(catalog.createTable("test_duplicate", schema));
+    EXPECT_FALSE(catalog.createTable("test_duplicate", schema2));
 
     auto retrieve = catalog.getColumns("test_duplicate");
     EXPECT_EQ(retrieve.size(), 1);
@@ -134,7 +134,7 @@ TEST_F(CatalogTest, MultipleTables) {
 TEST_F(CatalogTest, EmptySchema) {
     Catalog catalog(catFile);
     std::vector<Columns> schema = {};
-    catalog.createTable("empty_schema", schema);
+    EXPECT_FALSE(catalog.createTable("empty_schema", schema));
 
     EXPECT_FALSE(catalog.tableExists("empty_schema"));
 }

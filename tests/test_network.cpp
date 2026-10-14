@@ -50,14 +50,15 @@ static std::string readLineWithTimeout(asio::io_context &ctx, tcp::socket &sock,
 // A server on its own engine, for tests that need a non-default handshake timeout.
 // No localhost bypass, so every connection goes through CHALLENGE / AUTH. Declare it
 // in an inner scope and remove its files after the scope ends: the engine must be
-// destroyed first, or the destructor recreates them.
+// destroyed first, or the destructor recreates them. Files are also removed before the
+// engine opens them, so leftovers from a crashed run cannot make CREATE TABLE fail.
 struct HandshakeTestServer {
     Engine engine;
     NetworkServer server;
     std::thread thread;
 
     explicit HandshakeTestServer(int handshakeTimeoutSeconds)
-        : engine(128, "test_nethandshake.db", "test_nethandshake.cat", "test_nethandshake.wal"),
+        : engine((removeFiles(), 128), "test_nethandshake.db", "test_nethandshake.cat", "test_nethandshake.wal"),
           server(engine, 0, 3, 30, false, 4, false, handshakeTimeoutSeconds) {
         engine.query("CREATE TABLE hs_users (id INT, name STRING)");
         engine.query("INSERT INTO hs_users VALUES (1, Alice)");
@@ -593,6 +594,36 @@ TEST_F(NetworkServerTest, ServerSurvivesClientsThatDisconnectAbruptly) {
     // Still alive and still accepting
     std::string response = sendQuery("SELECT * FROM net_users");
     EXPECT_NE(response.find("Alice"), std::string::npos) << response;
+}
+
+// --- New test: CREATE TABLE on an existing name ---
+
+// Test 26: a client gets an error frame, not {"type": "ok"}, when the name is taken —
+// otherwise it cannot tell "created" from "already there with another schema"
+TEST_F(NetworkServerTest, CreateExistingTableReturnsError) {
+    std::string response = sendQuery("CREATE TABLE net_users (email STRING)");
+    EXPECT_NE(response.find("\"type\": \"error\""), std::string::npos) << response;
+    EXPECT_NE(response.find("already exists"), std::string::npos) << response;
+
+    // Original schema and data are untouched
+    std::string rows = sendQuery("SELECT * FROM net_users");
+    EXPECT_NE(rows.find("\"columns\": [\"id\",\"name\"]"), std::string::npos) << rows;
+    EXPECT_NE(rows.find("Alice"), std::string::npos) << rows;
+}
+
+// --- New test: SQL NULL on the wire ---
+
+// Test 27: SQL NULL is a bare JSON null, while the string 'NULL' stays the JSON string
+// "NULL". Before, both came back as "NULL" and a client could not tell them apart
+TEST_F(NetworkServerTest, NullIsJsonNullOnTheWire) {
+    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (8, NULL)"), "{\"type\": \"ok\"}\n");
+    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (9, 'NULL')"), "{\"type\": \"ok\"}\n");
+
+    std::string r1 = sendQuery("SELECT * FROM net_users WHERE id = 8");
+    EXPECT_NE(r1.find("[\"8\",null]"), std::string::npos) << r1;
+
+    std::string r2 = sendQuery("SELECT * FROM net_users WHERE id = 9");
+    EXPECT_NE(r2.find("[\"9\",\"NULL\"]"), std::string::npos) << r2;
 }
 
 // --- New tests: handshake timeout ---
