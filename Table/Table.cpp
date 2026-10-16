@@ -1,6 +1,20 @@
 #include "Table.hpp"
 #include "../Storage/StorageFile/StorageFile.hpp"
 #include <algorithm>
+#include <climits>
+#include <cmath>
+#include <optional>
+
+// The logical value of a BOOL literal, or nullopt if it is not one. The single list of
+// accepted spellings: validation and comparison both go through here
+static std::optional<bool> boolValue(const std::string &value)
+{
+    if (value == "true" || value == "TRUE" || value == "1")
+        return true;
+    if (value == "false" || value == "FALSE" || value == "0")
+        return false;
+    return std::nullopt;
+}
 
 int Table::getColumnIndex(const std::string &columnName) const
 {
@@ -66,11 +80,8 @@ bool Table::validateValueForType(const Value &maybeValue, const std::string &typ
 
     // Only the four canonical names reach here: the parser maps BOOLEAN / TEXT
     // to BOOL / STRING before the schema is stored.
-    if (type == "BOOL") {
-        return value == "true" || value == "false"
-                || value == "1" || value == "0"
-                || value == "TRUE" || value == "FALSE";
-    }
+    if (type == "BOOL")
+        return boolValue(value).has_value();
 
     if (type == "STRING")
         return true;
@@ -120,6 +131,32 @@ static bool evaluateCondition(const Condition *cond, const Row &row, const std::
 
     const std::string &left = *rowValue;
     const std::string &right = *cond->value;
+    const std::string &type = scheme[colIndex].type;
+
+    // = and != follow the column type, like < and > already did for numbers. For a number
+    // column = holds exactly when neither < nor > does, so 9.50 = 9.5 and 007 = 7
+    if (type == "INT" || type == "FLOAT")
+    {
+        try {
+            double l = std::stod(left), r = std::stod(right);
+            if (cond->op == "=")  return l == r;
+            if (cond->op == "!=") return l != r;
+            if (cond->op == ">")  return l > r;
+            if (cond->op == "<")  return l < r;
+            if (cond->op == ">=") return l >= r;
+            if (cond->op == "<=") return l <= r;
+        } catch (...) { return false; }
+        return false;
+    }
+
+    // TRUE, true and 1 are the same BOOL value
+    if (type == "BOOL" && (cond->op == "=" || cond->op == "!="))
+    {
+        std::optional<bool> l = boolValue(left), r = boolValue(right);
+        if (!l || !r)
+            return false;
+        return cond->op == "=" ? *l == *r : *l != *r;
+    }
 
     if (cond->op == "=")  return left == right;
     if (cond->op == "!=") return left != right;
@@ -139,7 +176,14 @@ Table::Table(const std::string &name, const std::vector<Columns> &schema,
     rebuildIndex();
 }
 
-std::expected<void, TableError> Table::insertRow(const Row &row)
+std::optional<int> Table::keyOf(const Row &row) const
+{
+    if (scheme.empty() || scheme[0].type != "INT" || row.values.empty() || !row.values[0])
+        return std::nullopt;
+    return std::stoi(*row.values[0]);
+}
+
+std::expected<void, TableError> Table::checkShape(const Row &row) const
 {
     // Validate schema: check column count
     if (row.values.size() != scheme.size())
@@ -151,6 +195,38 @@ std::expected<void, TableError> Table::insertRow(const Row &row)
         if (!validateValueForType(row.values[i], scheme[i].type))
             return std::unexpected(TableError::TYPE_VALIDATION_FAILED);
     }
+    return {};
+}
+
+std::expected<void, TableError> Table::checkRow(const Row &row)
+{
+    if (auto shape = checkShape(row); !shape)
+        return shape;
+
+    // The key is compared as an int, like the index does, so 007 and 7 collide.
+    // NULL keys are not indexed and never collide.
+    std::optional<int> key;
+    try
+    {
+        key = keyOf(row);
+    }
+    catch (...)
+    {
+        // Passes the digit check but overflows int, e.g. 99999999999
+        return std::unexpected(TableError::INDEX_INSERTION_FAILED);
+    }
+    if (key && index.search(*key).has_value())
+        return std::unexpected(TableError::DUPLICATE_KEY);
+    return {};
+}
+
+std::expected<void, TableError> Table::insertRow(const Row &row, bool enforceUnique)
+{
+    // Validate before writing: a rejected row used to be stored anyway when the key
+    // overflowed int, since the index was only touched after the page write
+    auto valid = enforceUnique ? checkRow(row) : checkShape(row);
+    if (!valid)
+        return valid;
 
     // Serialize row data
     std::string serialized;
@@ -166,20 +242,16 @@ std::expected<void, TableError> Table::insertRow(const Row &row)
     if (!res.success)
         return std::unexpected(TableError::PAGE_MANAGER_FULL);
 
-    // Index first INT column as primary key. A NULL key gets no index entry:
+    // Index column 0, if it is INT, as primary key. A NULL key gets no index entry:
     // WHERE id = x never matches it anyway, and IS NULL always does a full scan.
-    if (!row.values.empty() && row.values[0] && !scheme.empty() && scheme[0].type == "INT")
+    // Without enforceUnique a legacy key that overflows int is kept unindexed, like
+    // rebuildIndex does, so the rewrite does not drop it.
+    try
     {
-        try
-        {
-            int key = std::stoi(*row.values[0]);
-            index.insert(key, res.pageId, res.rowIndex);
-        }
-        catch (...)
-        {
-            return std::unexpected(TableError::INDEX_INSERTION_FAILED);
-        }
+        if (auto key = keyOf(row))
+            index.insert(*key, res.pageId, res.rowIndex);
     }
+    catch (...) {}
 
     nextKey++;
     return {};
@@ -195,10 +267,23 @@ std::vector<Row> Table::selectRow(Condition *cond)
         // id = NULL matches nothing
         if (!cond->value)
             return {};
+
+        // The literal is read as a number, like the full scan reads it, so 5.0 finds key 5.
+        // stoi used to turn 5.5 into 5 and to leak its own error for 'abc' or 99999999999.
+        // Anything that is not an exact int falls through to the scan, which answers it
+        // numerically: nothing for 5.5, a legacy key that overflows int (and is not indexed)
+        std::optional<int> key;
         try
         {
-            int key = std::stoi(*cond->value);
-            auto record = index.search(key);
+            double number = std::stod(*cond->value);
+            if (number == std::floor(number) && number >= INT_MIN && number <= INT_MAX)
+                key = static_cast<int>(number);
+        }
+        catch (...) {}
+
+        if (key)
+        {
+            auto record = index.search(*key);
             if (record.has_value())
             {
                 Page page = pageManager.readPage(record.value().pageId);
@@ -218,11 +303,6 @@ std::vector<Row> Table::selectRow(Condition *cond)
             }
             return {};
         }
-        catch (const std::exception &e)
-        {
-            throw; // Repropaga erorile de index sau corupere
-        }
-        catch (...) {}
     }
 
     // Full scan pentru orice alta conditie
@@ -301,7 +381,7 @@ size_t Table::deleteRow(Condition *cond)
     nextKey = 0;
 
     for (const auto &row : toKeep)
-        insertRow(row);
+        insertRow(row, false);
     return before - toKeep.size();
 }
 
@@ -317,7 +397,7 @@ size_t Table::updateRow(Condition *cond, const std::vector<std::pair<std::string
     nextKey = 0;
 
     for (const auto &row : newState)
-        insertRow(row);
+        insertRow(row, false);
     return matched;
 }
 

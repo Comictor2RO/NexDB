@@ -193,6 +193,21 @@ TEST(LexerTest, LoneSignIsNotANumber) {
     EXPECT_EQ(tokens[0].value, "5");
 }
 
+// Test 19: a name may start with '_'. The leading '_' used to be dropped as an unknown
+// character, so CREATE TABLE t (_x INT) made a column called x
+TEST(LexerTest, UnderscoreStartsAnIdentifier) {
+    Lexer lexer("_x a_b _");
+    auto tokens = lexer.tokenize();
+    ASSERT_EQ(tokens.size(), 4u);
+    EXPECT_EQ(tokens[0].type, TokenType::IDENTIFIER);
+    EXPECT_EQ(tokens[0].value, "_x");
+    EXPECT_EQ(tokens[1].type, TokenType::IDENTIFIER);
+    EXPECT_EQ(tokens[1].value, "a_b");
+    EXPECT_EQ(tokens[2].type, TokenType::IDENTIFIER);
+    EXPECT_EQ(tokens[2].value, "_");
+    EXPECT_EQ(tokens[3].type, TokenType::END_OF_FILE);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

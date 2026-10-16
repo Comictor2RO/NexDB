@@ -751,3 +751,16 @@ TEST_F(NetworkServerTest, HandshakeTimeoutDoesNotCountTowardBan) {
     }
     HandshakeTestServer::removeFiles();
 }
+
+// --- New test: unique key on the wire ---
+
+// Test 29: a duplicate key is an error frame, not an ok, and the existing row is untouched
+TEST_F(NetworkServerTest, DuplicateKeyInsertReturnsError) {
+    std::string err = sendQuery("INSERT INTO net_users VALUES (1, 'Mallory')");
+    EXPECT_NE(err.find("\"type\": \"error\""), std::string::npos) << err;
+    EXPECT_NE(err.find("Duplicate key 1 for column id"), std::string::npos) << err;
+
+    std::string rows = sendQuery("SELECT * FROM net_users WHERE id = 1");
+    EXPECT_NE(rows.find("Alice"), std::string::npos) << rows;
+    EXPECT_EQ(rows.find("Mallory"), std::string::npos) << rows;
+}

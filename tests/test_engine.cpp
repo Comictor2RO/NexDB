@@ -2,6 +2,7 @@
 #include "../Engine/Engine.hpp"
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 
 class EngineTest : public ::testing::Test {
 protected:
@@ -27,8 +28,9 @@ protected:
         std::remove(walFile.c_str());
 
         //CREATE/DROP DATABASE work under databases/, so clean those up too
-        for (const char *ext : {".db", ".cat", ".wal"})
-            std::filesystem::remove("databases/eng_dropdb" + std::string(ext));
+        for (const char *name : {"eng_dropdb", "eng_dupdb"})
+            for (const char *ext : {".db", ".cat", ".wal"})
+                std::filesystem::remove("databases/" + std::string(name) + ext);
     }
 };
 
@@ -462,4 +464,242 @@ TEST_F(EngineTest, AffectedRowCounts) {
 
     engine->query("DELETE FROM eng_aff");
     EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(3));
+}
+
+//Test 28: the first INT column is a unique key. A second INSERT with the same id is
+//rejected and the table keeps one row; the key compares as an int, so 007 collides with 7
+TEST_F(EngineTest, DuplicateKeyInsertIsRejected) {
+    engine->query("CREATE TABLE eng_dup (id INT, name STRING)");
+    engine->query("INSERT INTO eng_dup VALUES (1, 'Alice')");
+    engine->query("INSERT INTO eng_dup VALUES (7, 'Seven')");
+
+    for (const char *sql : {"INSERT INTO eng_dup VALUES (1, 'Bob')",
+                            "INSERT INTO eng_dup VALUES (007, 'Bond')",
+                            "INSERT INTO eng_dup (name, id) VALUES ('Carol', 1)"}) {
+        try {
+            engine->query(sql);
+            FAIL() << "Expected a duplicate key error for: " << sql;
+        } catch (const std::runtime_error &e) {
+            EXPECT_NE(std::string(e.what()).find("Insert failed for table eng_dup: Duplicate key"),
+                      std::string::npos) << e.what();
+        }
+    }
+
+    auto rows = engine->query("SELECT * FROM eng_dup");
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].values[1], "Alice");
+    EXPECT_EQ(rows[1].values[1], "Seven");
+}
+
+//Test 29: NULL keys are not part of uniqueness, like SQL UNIQUE
+TEST_F(EngineTest, ManyNullKeysAreAllowed) {
+    engine->query("CREATE TABLE eng_dupnull (id INT, name STRING)");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_dupnull VALUES (NULL, 'a')"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_dupnull VALUES (NULL, 'b')"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_dupnull (name) VALUES ('c')"));
+    EXPECT_EQ(engine->query("SELECT * FROM eng_dupnull").size(), 3u);
+}
+
+//Test 30: an UPDATE that would give two rows the same key is rejected before anything
+//is written, whether the key already exists or the SET hits several rows at once
+TEST_F(EngineTest, UpdateToExistingKeyIsRejected) {
+    engine->query("CREATE TABLE eng_dupupd (id INT, name STRING)");
+    engine->query("INSERT INTO eng_dupupd VALUES (1, 'Alice')");
+    engine->query("INSERT INTO eng_dupupd VALUES (2, 'Bob')");
+
+    for (const char *sql : {"UPDATE eng_dupupd SET id = 2 WHERE id = 1",
+                            "UPDATE eng_dupupd SET id = 5",
+                            "UPDATE eng_dupupd SET name = 'x', id = 02 WHERE name = 'Alice'"}) {
+        try {
+            engine->query(sql);
+            FAIL() << "Expected a duplicate key error for: " << sql;
+        } catch (const std::runtime_error &e) {
+            EXPECT_NE(std::string(e.what()).find("Update failed for table eng_dupupd: Duplicate key"),
+                      std::string::npos) << e.what();
+        }
+    }
+
+    auto rows = engine->query("SELECT * FROM eng_dupupd");
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].values[0], "1");
+    EXPECT_EQ(rows[0].values[1], "Alice");
+    EXPECT_EQ(rows[1].values[0], "2");
+    EXPECT_EQ(rows[1].values[1], "Bob");
+}
+
+//Test 31: UPDATEs that cannot create a duplicate still go through: setting a row's key
+//to its own value, moving it to a free key, and not touching the key at all
+TEST_F(EngineTest, UpdateWithoutKeyConflictSucceeds) {
+    engine->query("CREATE TABLE eng_dupok (id INT, name STRING)");
+    engine->query("INSERT INTO eng_dupok VALUES (1, 'Alice')");
+    engine->query("INSERT INTO eng_dupok VALUES (2, 'Bob')");
+
+    EXPECT_NO_THROW(engine->query("UPDATE eng_dupok SET id = 1 WHERE id = 1"));
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(1));
+    EXPECT_NO_THROW(engine->query("UPDATE eng_dupok SET id = 3 WHERE id = 2"));
+    EXPECT_NO_THROW(engine->query("UPDATE eng_dupok SET name = 'x'"));
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(2));
+
+    auto moved = engine->query("SELECT * FROM eng_dupok WHERE id = 3");
+    ASSERT_EQ(moved.size(), 1u);
+    EXPECT_EQ(moved[0].values[1], "x");
+    EXPECT_EQ(engine->query("SELECT * FROM eng_dupok WHERE id = 2").size(), 0u);
+}
+
+//Test 32: CREATE TABLE with the same column twice is an error and creates nothing; only
+//the first copy used to be reachable. Names are case-sensitive, so a and A may coexist
+TEST_F(EngineTest, CreateTableWithDuplicateColumnsIsRejected) {
+    try {
+        engine->query("CREATE TABLE eng_dupcol (a INT, b STRING, a FLOAT)");
+        FAIL() << "Expected a repeated column to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Column a specified more than once"), std::string::npos) << e.what();
+    }
+    EXPECT_FALSE(engine->getCatalog().tableExists("eng_dupcol"));
+
+    EXPECT_NO_THROW(engine->query("CREATE TABLE eng_dupcase (a INT, A STRING)"));
+}
+
+//Test 33: UPDATE ... SET a = 1, a = 2 is an error and changes nothing; the last
+//assignment used to win silently
+TEST_F(EngineTest, UpdateWithRepeatedColumnIsRejected) {
+    engine->query("CREATE TABLE eng_updrep (id INT, age INT)");
+    engine->query("INSERT INTO eng_updrep VALUES (1, 30)");
+
+    try {
+        engine->query("UPDATE eng_updrep SET age = 1, age = 2");
+        FAIL() << "Expected a repeated column to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Column age specified more than once"), std::string::npos) << e.what();
+    }
+
+    auto rows = engine->query("SELECT age FROM eng_updrep");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "30");
+}
+
+//Test 34: = and != compare by column type. They used to compare the text, so 9.50 did not
+//equal a stored 9.5, TRUE did not equal true, and 007 did not equal 7 outside the index
+TEST_F(EngineTest, EqualityComparesByColumnType) {
+    engine->query("CREATE TABLE eng_eqtype (id INT, score FLOAT, active BOOL, qty INT, name STRING)");
+    engine->query("INSERT INTO eng_eqtype VALUES (1, 9.5, true, 7, 'a')");
+    engine->query("INSERT INTO eng_eqtype VALUES (2, 3.25, FALSE, 8, 'b')");
+
+    auto idsWhere = [&](const std::string &where) {
+        std::vector<std::string> ids;
+        for (const auto &row : engine->query("SELECT id FROM eng_eqtype WHERE " + where))
+            ids.push_back(*row.values[0]);
+        return ids;
+    };
+    const std::vector<std::string> first = {"1"}, second = {"2"};
+
+    EXPECT_EQ(idsWhere("score = 9.50"), first);
+    EXPECT_EQ(idsWhere("score != 9.50"), second);
+
+    for (const char *where : {"active = TRUE", "active = true", "active = 1", "active = 'TRUE'"})
+        EXPECT_EQ(idsWhere(where), first) << where;
+    EXPECT_EQ(idsWhere("active != TRUE"), second);
+    EXPECT_EQ(idsWhere("active = 0"), second);
+
+    EXPECT_EQ(idsWhere("qty = 007"), first);
+    EXPECT_EQ(idsWhere("qty != 07"), second);
+
+    // Strings still compare as text
+    EXPECT_EQ(idsWhere("name = 'a'"), first);
+
+    // UPDATE and DELETE match through previewUpdate / previewDelete, not the index
+    engine->query("UPDATE eng_eqtype SET name = 'z' WHERE score = 9.50");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(1));
+    EXPECT_EQ(idsWhere("name = 'z'"), first);
+
+    // The key column too: SELECT used to find 02 through the index while UPDATE missed it
+    engine->query("UPDATE eng_eqtype SET name = 'y' WHERE id = 02");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(1));
+    EXPECT_EQ(idsWhere("name = 'y'"), second);
+
+    engine->query("DELETE FROM eng_eqtype WHERE score = 9.50");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(1));
+    auto left = engine->query("SELECT id FROM eng_eqtype");
+    ASSERT_EQ(left.size(), 1u);
+    EXPECT_EQ(left[0].values[0], "2");
+}
+
+//Test 35: WHERE on the key reads the literal as a number. stoi used to turn 5.5 into 5 and
+//return that row, and to reach the client as "stoi" for a value outside int
+TEST_F(EngineTest, KeyLookupUsesNumericValue) {
+    engine->query("CREATE TABLE eng_keynum (id INT, name STRING)");
+    engine->query("INSERT INTO eng_keynum VALUES (5, 'five')");
+    engine->query("INSERT INTO eng_keynum VALUES (6, 'six')");
+
+    EXPECT_EQ(engine->query("SELECT * FROM eng_keynum WHERE id = 5.5").size(), 0u);
+
+    auto exact = engine->query("SELECT name FROM eng_keynum WHERE id = 5.0");
+    ASSERT_EQ(exact.size(), 1u);
+    EXPECT_EQ(exact[0].values[0], "five");
+
+    std::vector<Row> huge;
+    EXPECT_NO_THROW(huge = engine->query("SELECT * FROM eng_keynum WHERE id = 99999999999"));
+    EXPECT_EQ(huge.size(), 0u);
+
+    engine->query("DELETE FROM eng_keynum WHERE id = 5.5");
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(0));
+    EXPECT_EQ(engine->query("SELECT * FROM eng_keynum").size(), 2u);
+}
+
+//Test 36: a WHERE literal the column can never hold is an error for SELECT, UPDATE and
+//DELETE, instead of quietly matching nothing. Any number is fine for INT and FLOAT
+TEST_F(EngineTest, WrongTypeLiteralInWhereIsAnError) {
+    engine->query("CREATE TABLE eng_wtype (id INT, age INT, active BOOL, name STRING)");
+    engine->query("INSERT INTO eng_wtype VALUES (1, 30, true, 'abc')");
+
+    for (const char *sql : {"SELECT * FROM eng_wtype WHERE age = 'abc'",
+                            "SELECT * FROM eng_wtype WHERE age > 'abc'",
+                            "SELECT * FROM eng_wtype WHERE active = 'da'",
+                            "SELECT * FROM eng_wtype WHERE id = 'abc'",
+                            "UPDATE eng_wtype SET name = 'x' WHERE age = 'abc'",
+                            "UPDATE eng_wtype SET name = 'x' WHERE active = 'da'",
+                            "DELETE FROM eng_wtype WHERE age > 'abc'",
+                            "DELETE FROM eng_wtype WHERE active = 'da'"}) {
+        try {
+            engine->query(sql);
+            FAIL() << "Expected a type error for: " << sql;
+        } catch (const std::runtime_error &e) {
+            EXPECT_NE(std::string(e.what()).find("Type validation failed (invalid value for column "),
+                      std::string::npos) << sql << ": " << e.what();
+        }
+    }
+
+    try {
+        engine->query("SELECT * FROM eng_wtype WHERE age = 'abc'");
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("column age of type INT"), std::string::npos) << e.what();
+    }
+
+    EXPECT_EQ(engine->query("SELECT * FROM eng_wtype WHERE name = 'abc'").size(), 1u);
+    EXPECT_EQ(engine->query("SELECT * FROM eng_wtype WHERE age > 2.5").size(), 1u);
+    EXPECT_EQ(engine->query("SELECT * FROM eng_wtype WHERE id = '1'").size(), 1u);
+    EXPECT_EQ(engine->query("SELECT * FROM eng_wtype WHERE age = NULL").size(), 0u);
+    EXPECT_EQ(engine->query("SELECT * FROM eng_wtype WHERE active IS NOT NULL").size(), 1u);
+
+    auto rows = engine->query("SELECT name FROM eng_wtype");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "abc");
+}
+
+//Test 37: CREATE DATABASE on a name that exists is an error and leaves its files alone;
+//it used to answer ok, which looks like a fresh database was made
+TEST_F(EngineTest, CreateExistingDatabaseThrows) {
+    engine->query("CREATE DATABASE eng_dupdb");
+    std::ofstream("databases/eng_dupdb.cat") << "kept";
+
+    try {
+        engine->query("CREATE DATABASE eng_dupdb");
+        FAIL() << "Expected CREATE DATABASE on an existing name to throw";
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find("Database 'eng_dupdb' already exists"), std::string::npos) << e.what();
+    }
+    EXPECT_GT(std::filesystem::file_size("databases/eng_dupdb.cat"), 0u);
+
+    EXPECT_NO_THROW(engine->query("DROP DATABASE eng_dupdb"));
+    EXPECT_FALSE(std::filesystem::exists("databases/eng_dupdb.db"));
 }

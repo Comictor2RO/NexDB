@@ -130,7 +130,9 @@ std::vector<Token> Lexer::tokenize()
         {
             skipWhitespace();
         }
-        else if(isalpha(currentCharacter))
+        //A name may start with '_' too (readWord already accepts it further in); the
+        //cast keeps isalpha defined for UTF-8 bytes, which are negative as a char
+        else if(isalpha((unsigned char)currentCharacter) || currentCharacter == '_')
         {
             tokens.push_back(readWord());
         }

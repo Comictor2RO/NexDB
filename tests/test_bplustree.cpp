@@ -105,7 +105,8 @@ TEST(BPlusTreeTest, InsertDuplicatesKey) {
 
     auto result = tree.search(10);
 
-    //because of the duplicate key, the first one is updated to the second one
+    //both entries stay in the tree; search returns the one it reaches first in the leaf.
+    //Table never inserts a duplicate key: the first INT column is unique (Table::checkRow)
     EXPECT_TRUE(result.has_value());
     EXPECT_EQ(result->pageId, 2);
     EXPECT_EQ(result->offset, 100);

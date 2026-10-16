@@ -291,3 +291,40 @@ TEST_F(TableTest, EmptyStringInLastColumnRoundTrips) {
     ASSERT_EQ(rows[0].values.size(), 2u);
     EXPECT_EQ(rows[0].values[1], "");
 }
+
+// Test 15: insertRow rejects a key that is already indexed and writes nothing, while the
+// rewrite path (enforceUnique = false) keeps duplicates so clear + reinsert loses no row
+TEST_F(TableTest, DuplicateKeyIsRejectedUnlessUniquenessIsOff) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
+    Table table = makeTable("test_dup", schema);
+
+    ASSERT_TRUE(table.insertRow({{"1", "Alice"}}).has_value());
+
+    auto dup = table.insertRow({{"1", "Bob"}});
+    ASSERT_FALSE(dup.has_value());
+    EXPECT_EQ(dup.error(), TableError::DUPLICATE_KEY);
+    EXPECT_EQ(table.checkRow({{"01", "Bob"}}).error(), TableError::DUPLICATE_KEY);
+    EXPECT_TRUE(table.checkRow({{"2", "Bob"}}).has_value());
+    EXPECT_EQ(table.selectRow(nullptr).size(), 1u);
+
+    EXPECT_TRUE(table.insertRow({{"1", "Bob"}}, false).has_value());
+    EXPECT_EQ(table.selectRow(nullptr).size(), 2u);
+
+    // deleteRow rewrites the rows it keeps; both legacy duplicates must survive it
+    ASSERT_TRUE(table.insertRow({{"2", "Carol"}}).has_value());
+    Condition byId = {"id", "2", "="};
+    EXPECT_EQ(table.deleteRow(&byId), 1u);
+    EXPECT_EQ(table.selectRow(nullptr).size(), 2u);
+}
+
+// Test 16: a key that passes the digit check but overflows int is rejected before the
+// page write. It used to be stored anyway, while the caller got INDEX_INSERTION_FAILED
+TEST_F(TableTest, OverflowingKeyIsNotStored) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
+    Table table = makeTable("test_overflow", schema);
+
+    auto res = table.insertRow({{"99999999999", "Big"}});
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), TableError::INDEX_INSERTION_FAILED);
+    EXPECT_EQ(table.selectRow(nullptr).size(), 0u);
+}

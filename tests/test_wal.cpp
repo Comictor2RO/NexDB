@@ -370,3 +370,29 @@ TEST_F(WALRecoveryTest, FirstStatementAfterStartupIsLogged) {
             found = true;
     EXPECT_TRUE(found);
 }
+
+//Test 17: a duplicate-key INSERT is rejected before it is logged. Logging first left an
+//uncommitted line that recovery replayed, bringing the rejected row back after a restart
+TEST_F(WALRecoveryTest, RejectedInsertIsNotLogged) {
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_dup (id INT, name STRING)");
+        engine.query("INSERT INTO wal_dup VALUES (1, 'Alice')");
+        EXPECT_THROW(engine.query("INSERT INTO wal_dup VALUES (1, 'Bob')"), std::runtime_error);
+    }
+
+    {
+        std::ifstream file(walFile);
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        EXPECT_EQ(content.find("Bob"), std::string::npos) << content;
+    }
+
+    testing::internal::CaptureStderr();
+    Engine engine(128, dbFile, catFile, walFile);
+    std::string err = testing::internal::GetCapturedStderr();
+    EXPECT_EQ(err.find("WAL replay error"), std::string::npos) << err;
+
+    auto rows = engine.query("SELECT * FROM wal_dup");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[1], "Alice");
+}

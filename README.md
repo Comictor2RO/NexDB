@@ -242,7 +242,9 @@ USE DATABASE myproject
 USE myproject
 ```
 
-`CREATE DATABASE` creates the database files on disk (GUI only by default, see above). `USE`
+`CREATE DATABASE` creates the database files on disk (GUI only by default, see above); a name
+that already exists is an error (`Database 'myproject' already exists`) and its files are left
+alone. `USE`
 switches the engine to another database and answers `{"type": "switch", "db": "<name>"}`.
 The switch applies to **every** connected client and to the GUI, not only to the connection
 that sent it.
@@ -584,17 +586,24 @@ quotes for anything with spaces or punctuation.
 `WHERE col = NULL` matches nothing, and no comparison (`=`, `!=`, `<`, …) ever matches a NULL.
 
 **WHERE:** exactly one condition — `=`, `!=`, `<`, `>`, `<=`, `>=`, `IS NULL`, `IS NOT NULL`.
-`=` and `!=` compare the stored text (`9.50` does not equal `9.5`); `<`, `>`, `<=`, `>=`
-compare numerically. No `AND` / `OR`, `ORDER BY`, `LIMIT` or `JOIN` yet.
+Comparisons follow the column type: on `INT` / `FLOAT` every operator is numeric (`9.50` equals
+`9.5`, `007` equals `7`); on `BOOL`, `=` / `!=` compare the logical value (`TRUE`, `true` and `1`
+are the same); on `STRING`, `=` / `!=` compare the text. A literal the column can never hold
+(`age = 'abc'`, `active = 'yes'`) is an error, not an empty result; any number is fine for an
+`INT` column (`age > 2.5`). No `AND` / `OR`, `ORDER BY`, `LIMIT` or `JOIN` yet.
 
-**Errors** are explicit: an existing table on `CREATE TABLE`, a missing table, an unknown
-column (in the select list, `SET`, `WHERE` or an `INSERT` column list), a value of the wrong
-type, a wrong value count and every parse error return `{"type": "error", ...}` with a
+**Errors** are explicit: an existing table on `CREATE TABLE`, an existing database on
+`CREATE DATABASE`, a missing table, an unknown column (in the select list, `SET`, `WHERE` or an
+`INSERT` column list), a column named twice (in `CREATE TABLE`, `SET` or an `INSERT` column
+list), a value of the wrong type, a wrong value count and every parse error return `{"type": "error", ...}` with a
 readable message.
 
 **Names:** keywords are case-insensitive; table and column names are case-sensitive
-(`Users` ≠ `users`). `NULL`, `IS` and `NOT` are reserved. The first `INT` column of a table is
-indexed (B+ tree) but not enforced as unique.
+(`Users` ≠ `users`) and start with a letter or `_`. `NULL`, `IS` and `NOT` are reserved. If the first column of a table is
+`INT`, it is a unique key, indexed by a B+ tree: an `INSERT` or `UPDATE` that would repeat an
+existing value is an error (`Duplicate key N for column id`). Keys compare as integers, so `007`
+and `7` collide; `NULL` is allowed any number of times. Only position 0 counts:
+`(name STRING, id INT)` has no key at all.
 
 One statement per network query; in the GUI editor, `;` separates statements.
 
@@ -655,7 +664,7 @@ NexDB/
 │   ├── StorageFile/  Shared .db file manager — allocates/frees pages per tableId
 │   ├── PageManager/  Per-table read/write with thread-safe LRU cache
 │   └── LRUCache/     LRU eviction with dirty-page tracking
-├── Indexing/       B+ tree index on first INT column
+├── Indexing/       B+ tree index on column 0, if INT
 ├── Catalog/        Table schema + tableId registry (persisted to .cat file)
 ├── WALManager/     Write-ahead log — fsync on commit for crash safety
 ├── Networking/     ASIO TCP server with challenge-response auth

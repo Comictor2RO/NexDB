@@ -38,7 +38,7 @@ rețea `null` JSON), iar `"NULL"` înseamnă textul de 4 litere (în GUI apare n
 - O singură comandă pe linie. `;` de la final e ignorat.
 - **Keyword-urile** nu țin cont de majuscule: `select`, `SELECT`, `Select` sunt identice.
 - **Numele de tabele și coloane țin cont de majuscule**: `Users` ≠ `users`, `ID` ≠ `id`.
-- Numele încep cu o literă. `NULL`, `IS`, `NOT` sunt rezervate și nu pot fi nume.
+- Numele încep cu o literă sau cu `_`. `NULL`, `IS`, `NOT` sunt rezervate și nu pot fi nume.
 - Tipuri: `INT`, `STRING`, `FLOAT`, `BOOL`; aliasuri `TEXT` → `STRING`, `BOOLEAN` → `BOOL`.
 - Valori acceptate:
 
@@ -63,10 +63,10 @@ rețea `null` JSON), iar `"NULL"` înseamnă textul de 4 litere (în GUI apare n
 | 1.6 | `CREATE TABLE t2 (a VARCHAR)` | eroare `Parse error: Invalid column type` |
 | 1.7 | `CREATE TABLE t3 (a INT,)` | eroare `Parse error: Trailing comma` |
 | 1.8 | `CREATE TABLE t4 (a INT b INT)` | eroare `Parse error: Unexpected token in query` |
-| 1.9 | `CREATE TABLE t5 (a INT, a STRING)` | ok ⚠️ — coloanele duplicate **nu** sunt verificate (§9) |
+| 1.9 | `CREATE TABLE t5 (a INT, a STRING)` | eroare `Column a specified more than once` — tabelul nu se creează. `(a INT, A STRING)` e valid (numele țin cont de majuscule) |
 | 1.10 | `CREATE TABLE null (a INT)` | eroare `Parse error: Invalid identifier` (`null` e rezervat) |
 | 1.11 | `CREATE TABLE t6 (id INT) extra` | eroare `Parse error: Unexpected tokens after end of statement` |
-| 1.12 | `CREATE TABLE t7 (id INT, _x INT)` | ok ⚠️ — `_` de la început e aruncat, coloana devine `x` (§9) |
+| 1.12 | `CREATE TABLE t7 (id INT, _x INT)` | ok — coloana se numește `_x` |
 | 1.13 | `CREATE TABLE 1abc (id INT)` | eroare `Parse error: Invalid identifier` |
 
 ---
@@ -85,7 +85,8 @@ rețea `null` JSON), iar `"NULL"` înseamnă textul de 4 litere (în GUI apare n
 | 2.6 | `INSERT INTO users VALUES (6, 'NULL', 20, 1.0, TRUE)` | ok, affected 1 — textul `"NULL"`, nu NULL; `1.0` rămâne `1.0` |
 | 2.7 | `INSERT INTO users VALUES (NULL, 'ghost', 1, 1, FALSE)` | ok, affected 1 — NULL e permis și în prima coloană INT (cea indexată) |
 | 2.8 | `INSERT INTO users (name, id) VALUES ('Carol', 7)` | ok, affected 1 — rând `7, Carol, null, null, null` (coloanele omise = NULL) |
-| 2.9 | `INSERT INTO users VALUES (1, 'Dup', 50, 3, true)` | ok ⚠️ — id duplicat acceptat (§9) |
+| 2.9 | `INSERT INTO users VALUES (1, 'Dup', 50, 3, true)` | `Insert failed for table users: Duplicate key 1 for column id` — prima coloană INT e cheie unică; nu se scrie nimic (nici în WAL) |
+| 2.9b | `INSERT INTO users VALUES (12, 'Dup', 50, 3, true)` | ok, affected 1 — același rând, cu id liber. `007` ar fi tot duplicat pentru `7` (cheia se compară ca int); NULL în id e permis de oricâte ori |
 | 2.10 | `INSERT INTO users VALUES (9, 'a\|b~c%d', 1, 1, true)` | ok, affected 1 — `\|`, `~`, `%` se păstrează exact |
 | 2.11 | `INSERT INTO users VALUES (10, "Dan", 1, 1, true)` | ok ⚠️ — ghilimelele duble sunt aruncate, se stochează `Dan` |
 | 2.12 | `insert into users values (11, 'lower', 1, 1, true);` | ok, affected 1 — minuscule + `;` final |
@@ -123,7 +124,7 @@ Starea tabelului `users` după secțiunea 2 (13 rânduri, în ordinea inserării
 | 6 | "NULL" | 20 | 1.0 | TRUE |
 | null | ghost | 1 | 1 | FALSE |
 | 7 | Carol | null | null | null |
-| 1 | Dup | 50 | 3 | true |
+| 12 | Dup | 50 | 3 | true |
 | 9 | a\|b~c%d | 1 | 1 | true |
 | 10 | Dan | 1 | 1 | true |
 | 11 | lower | 1 | 1 | true |
@@ -145,31 +146,33 @@ Starea tabelului `users` după secțiunea 2 (13 rânduri, în ordinea inserării
 | 3.6 | `SELECT * FROM Users` | `Table Users does not exist` — numele țin cont de majuscule |
 | 3.7 | `select id from users where id = 11` | `[11]` |
 
-### 3.2 WHERE cu `=` și `!=` (comparație de text)
+### 3.2 WHERE cu `=` și `!=` (după tipul coloanei)
+
+INT și FLOAT compară numeric, BOOL după valoarea logică (`true` = `TRUE` = `1`), STRING ca text.
 
 | # | Comandă | Rezultat |
 |---|---|---|
-| 3.10 | `SELECT * FROM users WHERE id = 1` | ⚠️ **un singur rând**: `Dup` — prin index, deși există doi cu id 1 (§9) |
+| 3.10 | `SELECT * FROM users WHERE id = 1` | `Alice` — prin index; id-ul e unic, deci e singurul rând |
 | 3.11 | `SELECT name FROM users WHERE id = -1` | 0 rânduri |
 | 3.12 | `SELECT name FROM users WHERE name = 'Alice'` | `Alice` |
 | 3.13 | `SELECT name FROM users WHERE name != 'Alice'` | 11 rânduri — toate, mai puțin `Alice` și rândul cu name NULL |
-| 3.14 | `SELECT name FROM users WHERE score = 9.50` | 0 rânduri ⚠️ — `=` compară text, `9.50` ≠ `9.5` |
+| 3.14 | `SELECT name FROM users WHERE score = 9.50` | `Alice` — `9.50` = `9.5` numeric |
 | 3.15 | `SELECT name FROM users WHERE score = 9.5` | `Alice` |
-| 3.16 | `SELECT name FROM users WHERE active = TRUE` | doar `"NULL"` (rândul 6, stocat ca `TRUE`) ⚠️ |
-| 3.17 | `SELECT name FROM users WHERE active = true` | `Alice, Dup, a\|b~c%d, Dan, lower, x` |
+| 3.16 | `SELECT name FROM users WHERE active = TRUE` | `Alice, don't, "NULL", Dup, a\|b~c%d, Dan, lower, x` — și rândul 3 (stocat `1`) și rândul 6 (stocat `TRUE`) |
+| 3.17 | `SELECT name FROM users WHERE active = true` | aceleași 8 rânduri ca 3.16 |
 | 3.18 | `SELECT id FROM users WHERE name = ''` | `[4]` |
 
 ### 3.3 WHERE cu `<`, `>`, `<=`, `>=` (comparație numerică)
 
 | # | Comandă | Rezultat |
 |---|---|---|
-| 3.20 | `SELECT name FROM users WHERE id <= 1` | `Alice, Dup` — scanare completă, găsește ambele id 1 |
+| 3.20 | `SELECT name FROM users WHERE id <= 1` | `Alice` — scanare completă, același rezultat ca `id = 1` |
 | 3.21 | `SELECT name FROM users WHERE age > 25` | `Alice, don't, Dup` |
 | 3.22 | `SELECT name FROM users WHERE age < 0` | `""` (rândul 4, age -5) |
 | 3.23 | `SELECT name FROM users WHERE age >= 30` | `Alice, don't, Dup` |
 | 3.24 | `SELECT name FROM users WHERE score <= 1` | `don't, "NULL", ghost, a\|b~c%d, Dan, lower` |
 | 3.25 | `SELECT name FROM users WHERE score > -2` | 11 rânduri — toate cu score diferit de NULL |
-| 3.26 | `SELECT id FROM users WHERE age > 'abc'` | 0 rânduri — operand nenumeric = nicio potrivire, fără eroare |
+| 3.26 | `SELECT id FROM users WHERE age > 'abc'` | `Type validation failed (invalid value for column age of type INT)` — literalul trebuie să încapă în tipul coloanei. Pe INT merge orice număr (`age > 2.5`), pe BOOL doar `true false TRUE FALSE 1 0` |
 
 ### 3.4 WHERE cu NULL
 
@@ -199,8 +202,8 @@ Starea tabelului `users` după secțiunea 2 (13 rânduri, în ordinea inserării
 
 | # | Comandă | Rezultat |
 |---|---|---|
-| 4.1 | `UPDATE users SET age = 31 WHERE id = 1` | ok, affected **2** — scanare completă, ambele id 1 |
-| 4.2 | `SELECT name, age FROM users WHERE age = 31` | `[Alice, 31]`, `[Dup, 31]` |
+| 4.1 | `UPDATE users SET age = 31 WHERE id = 1` | ok, affected 1 |
+| 4.2 | `SELECT name, age FROM users WHERE age = 31` | `[Alice, 31]` |
 | 4.3 | `UPDATE users SET age = 32, score = 8.0 WHERE name = 'Alice'` | ok, affected 1 — mai multe coloane deodată |
 | 4.4 | `UPDATE users SET name = NULL WHERE id = 2` | ok, affected 1 — `Bob` devine NULL |
 | 4.5 | `UPDATE users SET age = -10 WHERE name IS NULL` | ok, affected 2 — id 2 și id 5 |
@@ -214,8 +217,10 @@ Starea tabelului `users` după secțiunea 2 (13 rânduri, în ordinea inserării
 | 4.13 | `UPDATE users SET age > 1` | `Parse error: Unexpected token in query` |
 | 4.14 | `UPDATE users SET age = 1,` | `Parse error: Invalid identifier` |
 | 4.15 | `UPDATE users age = 1` | `Parse error: Missing required keyword` |
+| 4.16 | `UPDATE users SET id = 2 WHERE id = 1` | `Update failed for table users: Duplicate key 2 for column id` — id 2 există deja. La fel `SET id = 5` fără WHERE (13 rânduri cu același id). `SET id = 1 WHERE id = 1` trece |
+| 4.17 | `UPDATE users SET age = 1, age = 2` | `Column age specified more than once` |
 
-Erorile 4.9–4.15 nu modifică nimic.
+Erorile 4.9–4.17 nu modifică nimic.
 
 `SELECT id, name, age, active FROM users` după secțiunea 4:
 
@@ -229,7 +234,7 @@ Erorile 4.9–4.15 nu modifică nimic.
 | 6 | "NULL" | 20 | false |
 | null | ghost | 1 | false |
 | 7 | Zoe | null | false |
-| 1 | Dup | 31 | false |
+| 12 | Dup | 50 | false |
 | 9 | a\|b~c%d | 1 | false |
 | 10 | Dan | 1 | false |
 | 11 | lower | 1 | false |
@@ -248,7 +253,7 @@ Erorile 4.9–4.15 nu modifică nimic.
 | 5.5 | `DELETE FROM users WHERE nosuch = 1` | `Column nosuch does not exist in table users` |
 | 5.6 | `DELETE FROM nosuch` | `Table nosuch does not exist` |
 | 5.7 | `DELETE users` | `Parse error: Missing required keyword` |
-| 5.8 | `SELECT id, name FROM users` | 9 rânduri: `1 Alice, 3 don't, 6 "NULL", null ghost, 7 Zoe, 1 Dup, 9 a\|b~c%d, 11 lower, 8 x` |
+| 5.8 | `SELECT id, name FROM users` | 9 rânduri: `1 Alice, 3 don't, 6 "NULL", null ghost, 7 Zoe, 12 Dup, 9 a\|b~c%d, 11 lower, 8 x` |
 | 5.9 | `DELETE FROM users` | ok, affected 9 — fără WHERE șterge tot |
 | 5.10 | `SELECT * FROM users` | 0 rânduri, dar header-ul de coloane rămâne |
 
@@ -271,7 +276,7 @@ Erorile 4.9–4.15 nu modifică nimic.
 | # | Comandă | Rezultat |
 |---|---|---|
 | 7.1 | `CREATE DATABASE teste_tmp` | ok |
-| 7.2 | `CREATE DATABASE teste_tmp` | ok ⚠️ — dacă există deja, nu face nimic și nu dă eroare |
+| 7.2 | `CREATE DATABASE teste_tmp` | `Database 'teste_tmp' already exists` — fișierele existente rămân neatinse |
 | 7.3 | `USE teste_tmp` | switch `teste_tmp` |
 | 7.4 | `CREATE TABLE inner_t (id INT)` | ok — creat în `teste_tmp` |
 | 7.5 | `USE DATABASE teste_main` | switch `teste_main` — ambele forme (`USE x` și `USE DATABASE x`) merg |
@@ -310,11 +315,6 @@ Marcate cu ⚠️ mai sus. Toate sunt comportamentul real al engine-ului la data
 
 | Capcană | Unde | Detaliu |
 |---|---|---|
-| Id-uri duplicate acceptate | 2.9, 3.10, 3.20, 4.1 | Prima coloană INT e indexată, dar nu e unică. `WHERE id = 1` prin index întoarce **un** rând, iar `id <= 1`, UPDATE și DELETE le găsesc pe toate. |
-| Coloane duplicate în CREATE TABLE | 1.9 | `(a INT, a STRING)` e acceptat. |
-| `_` la începutul unui nume | 1.12 | E aruncat în tăcere: `_x` devine `x`. |
 | Semn cu spațiu | 2.13 | `- 5` devine `5`; doar `-5` lipit păstrează semnul. |
 | Ghilimele duble | 2.11 | `"Dan"` devine `Dan`; merge din întâmplare. |
-| `=` compară text | 3.14, 3.16 | `9.50` ≠ `9.5`, `TRUE` ≠ `true`. `<`, `>`, `<=`, `>=` compară numeric. |
-| `CREATE DATABASE` pe nume existent | 7.2 | Nu dă eroare (spre deosebire de `CREATE TABLE`). |
 | Fără `AND`/`OR` | 3.44 | Exact o condiție per `WHERE`. Nici `ORDER BY`, `LIMIT`, `JOIN`. |

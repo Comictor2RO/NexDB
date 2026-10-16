@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <unordered_set>
 
 // Filenames are case-insensitive on Windows, so database names must be compared that way
 static bool equalsIgnoreCase(const std::string &a, const std::string &b)
@@ -33,11 +34,33 @@ static void requireColumn(const std::vector<Columns> &scheme, const std::string 
 }
 
 // A WHERE on a misspelled column used to match nothing and succeed, which looks exactly
-// like "no matching rows"
-static void requireConditionColumn(const Condition *cond, const std::vector<Columns> &scheme, const std::string &table)
+// like "no matching rows". The same goes for a literal the column can never hold
+// (age = 'abc'), so that is an error too. INT and FLOAT accept any number, which keeps
+// age > 2.5 and id = 5.0 working; IS [NOT] NULL and = NULL carry no value to check.
+static void requireValidCondition(const Condition *cond, const std::vector<Columns> &scheme,
+                                  const Table &table, const std::string &tableName)
 {
-    if (cond != nullptr)
-        requireColumn(scheme, cond->column, table);
+    if (cond == nullptr)
+        return;
+    requireColumn(scheme, cond->column, tableName);
+    if (!cond->value)
+        return;
+
+    const Columns &column = scheme[findColumn(scheme, cond->column)];
+    const std::string checkAs = column.type == "INT" ? "FLOAT" : column.type;
+    if (!table.validateValueForType(cond->value, checkAs))
+        throw std::runtime_error("Type validation failed (invalid value for column " + column.name
+            + " of type " + column.type + ")");
+}
+
+// The same name twice: in CREATE TABLE only the first copy would ever be reachable, in
+// UPDATE SET the last one would silently win
+static void requireUniqueNames(const std::vector<std::string> &names)
+{
+    std::unordered_set<std::string> seen;
+    for (const auto &name : names)
+        if (!seen.insert(name).second)
+            throw std::runtime_error("Column " + name + " specified more than once");
 }
 
 Engine::Engine(int cacheCapacity,
@@ -104,6 +127,13 @@ void Engine::execute(Statement *statement)
 
 void Engine::executeCreate(const CreateStatement &stmt)
 {
+    // Checked here and not in the parser, since a ParseError cannot carry the column name.
+    // Names are case-sensitive, like everywhere else, so (a INT, A STRING) is allowed.
+    std::vector<std::string> names;
+    for (const auto &c : stmt.getColumns())
+        names.push_back(c.name);
+    requireUniqueNames(names);
+
     // createTable also refuses an empty column list, but the parser already rejects
     // that, so a false result here always means the name is taken.
     if (!catalog->createTable(stmt.getTable(), stmt.getColumns()))
@@ -117,6 +147,36 @@ void Engine::executeDrop(const DropStatement &stmt)
 
     dropTableStorage(stmt.getTable());
     catalog->dropTable(stmt.getTable());
+}
+
+// "<op> failed for table T: ..." for a TableError; row supplies the key for DUPLICATE_KEY
+static std::string tableErrorMessage(const std::string &op, const std::string &table, TableError error,
+                                     const std::vector<Columns> &scheme, const Row &row)
+{
+    std::string errorMsg = op + " failed for table " + table + ": ";
+    switch (error)
+    {
+        case TableError::SCHEME_MISMATCH:
+            errorMsg += "Column count mismatch (expected " + std::to_string(scheme.size()) + " columns)";
+            break;
+        case TableError::TYPE_VALIDATION_FAILED:
+            errorMsg += "Type validation failed (invalid value for column type)";
+            break;
+        case TableError::PAGE_MANAGER_FULL:
+            errorMsg += "Page manager full (disk space or page limit reached)";
+            break;
+        case TableError::INDEX_INSERTION_FAILED:
+            errorMsg += "Index insertion failed (B+Tree error)";
+            break;
+        case TableError::DUPLICATE_KEY:
+            errorMsg += "Duplicate key " + std::to_string(std::stoi(*row.values[0]))
+                + " for column " + scheme[0].name;
+            break;
+        default:
+            errorMsg += "Unknown error";
+            break;
+    }
+    return errorMsg;
 }
 
 void Engine::dropTableStorage(const std::string &tableName)
@@ -153,33 +213,19 @@ void Engine::executeInsert(const InsertStatement &stmt)
         row.values = std::move(ordered);
     }
 
+    // Reject before logging, so a failed INSERT leaves no uncommitted line in the WAL.
+    // Recovery skips the duplicate check: everything in the WAL was valid when written, and
+    // replaying a REPLACE block row by row must not drop legacy duplicates.
     if (!inRecovery)
-        wal->logInsert(stmt.getTable(), row.values);
-
-    auto result = table.insertRow(row);
-    if (!result)
     {
-        std::string errorMsg = "Insert failed for table " + stmt.getTable() + ": ";
-        switch (result.error())
-        {
-            case TableError::SCHEME_MISMATCH:
-                errorMsg += "Column count mismatch (expected " + std::to_string(scheme.size()) + " columns)";
-                break;
-            case TableError::TYPE_VALIDATION_FAILED:
-                errorMsg += "Type validation failed (invalid value for column type)";
-                break;
-            case TableError::PAGE_MANAGER_FULL:
-                errorMsg += "Page manager full (disk space or page limit reached)";
-                break;
-            case TableError::INDEX_INSERTION_FAILED:
-                errorMsg += "Index insertion failed (B+Tree error)";
-                break;
-            default:
-                errorMsg += "Unknown error";
-                break;
-        }
-        throw std::runtime_error(errorMsg);
+        if (auto ok = table.checkRow(row); !ok)
+            throw std::runtime_error(tableErrorMessage("Insert", stmt.getTable(), ok.error(), scheme, row));
+        wal->logInsert(stmt.getTable(), row.values);
     }
+
+    auto result = table.insertRow(row, !inRecovery);
+    if (!result)
+        throw std::runtime_error(tableErrorMessage("Insert", stmt.getTable(), result.error(), scheme, row));
 
     lastAffected = 1;
 
@@ -192,7 +238,7 @@ std::vector<Row> Engine::executeSelect(const SelectStatement &stmt)
     std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
 
-    requireConditionColumn(stmt.getCondition(), scheme, stmt.getTable());
+    requireValidCondition(stmt.getCondition(), scheme, table, stmt.getTable());
     std::vector<Row> allRows = table.selectRow(stmt.getCondition());
     const std::vector<std::string> &selectedColumns = stmt.getColumns();
 
@@ -234,7 +280,7 @@ void Engine::executeDelete(const DeleteStatement &stmt)
     std::vector<Columns> scheme = catalog->getColumns(stmt.getTable());
     Table table(stmt.getTable(), scheme, *storage, catalog->getTableId(stmt.getTable()), cacheCapacity);
 
-    requireConditionColumn(stmt.getCondition(), scheme, stmt.getTable());
+    requireValidCondition(stmt.getCondition(), scheme, table, stmt.getTable());
 
     if (!inRecovery)
     {
@@ -258,6 +304,7 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
 
     // Validate up front: previewUpdate silently returns nothing for a bad column or value,
     // which used to reach the client as a plain ok
+    std::vector<std::string> assigned;
     for (const auto &a : stmt.getAssignments())
     {
         requireColumn(scheme, a.first, stmt.getTable());
@@ -266,12 +313,49 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
             throw std::runtime_error("Update failed for table " + stmt.getTable()
                 + ": Type validation failed (invalid value for column " + column.name
                 + " of type " + column.type + ")");
+        assigned.push_back(a.first);
     }
-    requireConditionColumn(stmt.getCondition(), scheme, stmt.getTable());
+    requireUniqueNames(assigned);
+    requireValidCondition(stmt.getCondition(), scheme, table, stmt.getTable());
 
     if (!inRecovery)
     {
         std::vector<Row> newState = table.previewUpdate(stmt.getCondition(), stmt.getAssignments());
+
+        // Only an assignment to the key column can create a duplicate. SET values are
+        // literals, so every matched row gets the same key: a conflict means two rows end
+        // up with it. Checked before the WAL and before updateRow's clear + reinsert.
+        for (const auto &a : stmt.getAssignments())
+        {
+            if (scheme.empty() || scheme[0].type != "INT" || a.first != scheme[0].name || !a.second)
+                continue;
+
+            Row probe;
+            probe.values.assign(scheme.size(), std::nullopt);
+            probe.values[0] = a.second;
+            int key;
+            try { key = *table.keyOf(probe); }
+            catch (...)
+            {
+                throw std::runtime_error(tableErrorMessage("Update", stmt.getTable(),
+                    TableError::INDEX_INSERTION_FAILED, scheme, probe));
+            }
+
+            size_t holders = 0;
+            for (const auto &row : newState)
+            {
+                try
+                {
+                    if (table.keyOf(row) == key)
+                        holders++;
+                }
+                catch (...) {} // legacy key that overflows int: equals nothing
+            }
+            if (holders > 1)
+                throw std::runtime_error(tableErrorMessage("Update", stmt.getTable(),
+                    TableError::DUPLICATE_KEY, scheme, probe));
+        }
+
         if (!newState.empty())
         {
             wal->logReplaceBegin(stmt.getTable(), stmt.getCondition());
@@ -305,10 +389,15 @@ void Engine::executeCreateDatabase(const CreateDatabaseStatement &stmt)
 {
     std::filesystem::create_directories("databases");
     std::string base = "databases/" + stmt.getName();
-    if (!std::filesystem::exists(base + ".db"))
-        std::ofstream(base + ".db").close();
-    if (!std::filesystem::exists(base + ".cat"))
-        std::ofstream(base + ".cat").close();
+
+    // Existence is judged by .db, like USE and DROP. It used to answer ok and leave the
+    // old files alone, which looks exactly like a fresh, empty database being created
+    if (std::filesystem::exists(base + ".db"))
+        throw std::runtime_error("Database '" + stmt.getName() + "' already exists");
+
+    // DROP removes .cat before .db, so no orphaned .cat can be left behind to truncate here
+    std::ofstream(base + ".db").close();
+    std::ofstream(base + ".cat").close();
 }
 
 void Engine::executeDropDatabase(const DropDatabaseStatement &stmt)

@@ -231,6 +231,9 @@ are, `True` is not. Any client that formats values must map booleans explicitly:
 'true' if value else 'false'
 ```
 
+The same applies to a `WHERE`: `active = True` is a type error (§7.1), while `active = true`,
+`active = TRUE` and `active = 1` all find the same rows.
+
 ### 5.3 NULL
 
 The unquoted keyword `NULL` (any case) is SQL NULL. It is valid in **every** column type,
@@ -248,8 +251,8 @@ Comparisons follow SQL rules: any comparison with NULL is unknown and **never ma
 - `WHERE col != 5` does **not** match rows where `col` is NULL.
 - `UPDATE t SET col = NULL` stores a real NULL.
 
-The first `INT` column is indexed (§7.3); a NULL there is allowed and simply gets no index
-entry. There is no `NOT NULL` constraint.
+If the first column of a table is `INT`, it is a unique, indexed key (§7.3); a NULL there is allowed, any number
+of times, and simply gets no index entry. There is no `NOT NULL` constraint.
 
 A client should translate `None` / `null` to the bare keyword `NULL`, and never quote it.
 
@@ -281,7 +284,8 @@ The encoding is internal — values round-trip, so a client never sees percent-e
   the type position of `CREATE TABLE`, so `text` and `boolean` remain valid column names.
 - **Identifiers keep their case** and are compared case-**sensitively** everywhere
   (table names, column names). `Users` and `users` are two different tables.
-- Identifiers match `[A-Za-z][A-Za-z0-9_]*` — they must start with a letter.
+- Identifiers match `[A-Za-z_][A-Za-z0-9_]*`: they start with a letter or `_`, so `_x` and
+  even `_` alone are valid names. A leading `_` used to be dropped, turning `_x` into `x`.
 - Strings use **single quotes**, with `''` as the escape for a literal `'`:
   `'don''t'` stores `don't`. Double quotes are not string delimiters.
 - Numbers are digits with at most one `.`, optionally preceded by a sign **written directly
@@ -347,18 +351,36 @@ Without a column list, values are positional in schema order, as before.
 
 ## 7. Execution semantics worth encoding in tests
 
-### 7.1 `=` and `!=` are string comparisons
+### 7.1 Comparisons follow the column type
 
-`evaluateCondition` compares raw stored text for `=` and `!=`, and only converts with
-`std::stod` for `<`, `>`, `<=`, `>=`. Consequences:
+`evaluateCondition` picks the comparison from the type of the `WHERE` column:
 
-- `WHERE price = 9.90` does not match a stored `9.9`.
-- `WHERE active = TRUE` does not match a stored `true`.
-- `WHERE id = 007` does not match a stored `7`.
-- but `WHERE price > 9.8` does match `9.9`, numerically.
+| Column type | `=` / `!=` | `<` `>` `<=` `>=` |
+|---|---|---|
+| `INT`, `FLOAT` | numeric | numeric |
+| `BOOL` | logical value: `true`, `TRUE` and `1` are equal | `std::stod` on the text, see below |
+| `STRING` | exact text | `std::stod` on the text, see below |
 
-A non-numeric operand in an ordering comparison throws inside `stod`, is caught, and the
-row simply does not match.
+Consequences:
+
+- `WHERE price = 9.90` matches a stored `9.9`.
+- `WHERE id = 007` matches a stored `7`, on the key column and on any other `INT` column.
+- `WHERE active = TRUE` matches a stored `true`, `TRUE` or `1`.
+- `WHERE id = 5.5` on an `INT` column is valid and matches nothing.
+
+Numbers compare as `double`, so two `INT` values above 2^53 that differ only in their last
+digits can compare equal.
+
+The literal must be a value the column could hold. Otherwise the query is an error, not an
+empty result: `Type validation failed (invalid value for column <col> of type <TYPE>)`, for
+`SELECT`, `UPDATE` and `DELETE` alike. Any number is accepted for `INT` and `FLOAT`
+(`age > 2.5`), exactly the six spellings of §5.1 for `BOOL`, and anything for `STRING`.
+`IS [NOT] NULL` and `= NULL` are never rejected. A quoted number is the same as an unquoted
+one (`id = '5'` finds `5`), since the server does not keep track of quotes.
+
+Ordering operators on `BOOL` and `STRING` still parse both sides with `std::stod`, so a value
+that is not a number never matches (`'10' < '9'` is false, `'abc' < 'b'` is false). Do not
+build on that: it is tracked as a bug in `milestones.md`.
 
 ### 7.2 An unknown column is an error everywhere
 
@@ -366,18 +388,31 @@ A `WHERE` on a column that does not exist is an error for `SELECT`, `UPDATE` and
 (`Column X does not exist in table Y`), the same error the SELECT list, the `SET` list and
 the INSERT column list give. A typo is never mistaken for "no matching rows".
 
-### 7.3 Equality on the first INT column returns at most one row
+### 7.3 The first column, if INT, is a unique key
 
-If the first column is `INT`, it is indexed by a B+ tree, and `WHERE <firstcol> = <n>`
-takes the index path, which returns a single record. Duplicates are not rejected on
-insert, so a table with two rows sharing that value will return **one** row for the
-equality query but **both** for `SELECT *` or for the same filter expressed as `>=`/`<=`.
+If the first column of the table (position 0) is `INT`, it is a unique key indexed by a
+B+ tree, and `WHERE <firstcol> = <n>` takes the index path when `<n>` is an exact integer
+that fits an int (`5`, `5.0`, `007`). Any other number (`5.5`, `99999999999`) takes a full
+scan and gets the same numeric answer as every other column (§7.1), so which path ran is
+invisible to a client. Only position 0 counts:
+`(name STRING, id INT)` has no key, no index and no uniqueness check. An `INSERT` whose key already exists, or an
+`UPDATE` that would leave two rows with the same key, fails with
+`<Insert|Update> failed for table <name>: Duplicate key <n> for column <col>` and changes
+nothing. Keys compare as integers (`007` collides with `7`). `NULL` is not part of the
+key: any number of rows may have a `NULL` there, and `WHERE <firstcol> = NULL` matches none
+of them (§5.3).
 
-Treat the first INT column as an unenforced primary key and document it.
+An `UPDATE` that does not assign the key column never hits this error. A table written by
+an older server may already contain duplicate keys; those rows stay readable, but the
+equality query returns only one of them.
+
+This implicit key is a temporary rule; declared `UNIQUE` / `AUTOINCREMENT` columns are
+planned (see `milestones.md`, P1).
 
 ### 7.4 UPDATE reports what it did
 
 - An assignment to a column that does not exist → `Column X does not exist in table Y`.
+- The same column assigned twice (`SET a = 1, a = 2`) → `Column a specified more than once`.
 - A value that fails type validation → `Update failed for table T: Type validation failed
   (invalid value for column C of type INT)`.
 - `UPDATE` on a table that does not exist → `Table T does not exist`.
@@ -391,6 +426,10 @@ Map `affected` to the client's `rowcount`.
 `{"type": "error", "message": "Table <name> already exists"}` and leaves the existing table
 — schema and rows — untouched, whatever schema the new statement asked for. This mirrors
 `DROP TABLE` on a missing table, which returns `Table <name> does not exist`.
+
+A column list that names the same column twice, `(a INT, a STRING)`, is
+`Column a specified more than once`, and nothing is created. Names are case-sensitive, so
+`(a INT, A STRING)` is two different columns.
 
 There is no `IF NOT EXISTS`. A client that wants an idempotent `create_table()` has to
 catch the `already exists` error itself, and, if the schema matters, compare it with the
@@ -452,13 +491,14 @@ disappear underneath a connected client without any query of its own — the sam
 surprise as `USE` in §7.6. A client cannot treat the set of databases as stable, and the
 protocol offers no way to enumerate them anyway.
 
-For the record, the local semantics the block hides from clients: `CREATE DATABASE` is
-idempotent — it creates `databases/<name>.db` and `.cat` only if absent and never errors.
-`DROP DATABASE` deletes `.wal`, `.cat`, `.db` in that order (a partial failure leaves the
+For the record, the local semantics the block hides from clients: `CREATE DATABASE` creates
+`databases/<name>.db` and `.cat`, and errors with `Database '<name>' already exists` if the
+`.db` is already there, leaving the existing files alone. Like `DROP`, that check is
+case-insensitive on Windows, because the filesystem is. `DROP DATABASE` deletes `.wal`, `.cat`, `.db` in that order (a partial failure leaves the
 `.db` in place, so the statement can be retried), refuses the currently active database
 case-insensitively, and errors on a missing one. It writes no WAL record, so it is never
 replayed on recovery and cannot be rolled back. None of it is reachable from a client, which
-also makes three of the engine's error messages unreachable (§8).
+also makes four of the engine's error messages unreachable (§8).
 
 ---
 
@@ -488,7 +528,10 @@ An empty line yields `Parse error: Missing required keyword`.
 
 ```
 Table <name> does not exist
+Table <name> already exists
 Column <name> does not exist in table <table>
+Column <name> specified more than once
+Type validation failed (invalid value for column <col> of type <TYPE>)
 Database '<name>' does not exist (use CREATE DATABASE first)
 CREATE DATABASE/DROP DATABASE is not permitted for remote clients
 Invalid SQL query
@@ -496,12 +539,18 @@ Insert failed for table <name>: Column count mismatch (expected N columns)
 Insert failed for table <name>: Type validation failed (invalid value for column type)
 Insert failed for table <name>: Page manager full (disk space or page limit reached)
 Insert failed for table <name>: Index insertion failed (B+Tree error)
+Insert failed for table <name>: Duplicate key <n> for column <col>
+Update failed for table <name>: Type validation failed (invalid value for column <col> of type <TYPE>)
+Update failed for table <name>: Duplicate key <n> for column <col>
+Update failed for table <name>: Index insertion failed (B+Tree error)
 ```
 
-Three more exist in `Engine.cpp` but no client can ever observe them, because they are raised
-inside `executeDropDatabase`, which the network path refuses before reaching (§7.8):
+Four more exist in `Engine.cpp` but no client can ever observe them, because they are raised
+inside `executeCreateDatabase` and `executeDropDatabase`, which the network path refuses
+before reaching (§7.8):
 
 ```
+Database '<name>' already exists
 Database '<name>' does not exist
 Cannot drop the currently active database '<name>' (USE another database first)
 Failed to delete database '<name>': <.ext> is in use
@@ -573,6 +622,7 @@ Worth surfacing in the client's own docs, because they will surprise users:
       and the GUI can still run them, so databases move under you
 - [ ] `affected` is present only for INSERT/UPDATE/DELETE, and `0` is a success
 - [ ] One condition per `WHERE`, no `AND`/`OR`, no `ORDER BY`/`LIMIT`
+- [ ] A `WHERE` literal the column cannot hold (`age = 'abc'`) is an error, not zero rows
 
 ### A mock server is enough to test all of it
 

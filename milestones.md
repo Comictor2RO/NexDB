@@ -68,6 +68,33 @@ ambiguități de delimitatori, extensibil (poți adăuga câmpuri fără breakin
   engleză — uniformizate stilistic (fără punct final). Struct-ul mort `ParseResult` din
   `Parser.hpp` a fost eliminat. Test nou anti-regresie în `tests/test_engine.cpp` (11c).
 - [x] **Validare config** ✅ *(rezolvat)* — crash dacă `config.json` are valori invalide (ex. `"port": "abc"`).
+- [ ] **Constrângeri de coloană: UNIQUE și AUTOINCREMENT**
+  Azi cheia e implicită: prima coloană a tabelului, dacă e INT, e indexată și unică (`keyOf`,
+  `checkRow`, verificarea din `executeUpdate`). În P1 pentru că mutarea la cheie declarată schimbă
+  ce vede un client, deci trebuie decisă înainte de pachetul Python.
+  - **Implicit vs. declarat.** Cu `UNIQUE` în schemă, regula „poziția 0 INT = unică” devine ascunsă
+    și se bate cu cea explicită (n-ai putea avea un INT neunic pe prima coloană). Recomandat: cheie
+    **doar declarată**. Catalogul fără flaguri se citește ca „coloana 0 INT e UNIQUE”, deci tabelele
+    vechi nu se schimbă. Tabelele noi fără `UNIQUE` nu mai au cheie (schimbare vizibilă).
+  - **Catalog compatibil.** `Catalog::load` (`Catalog/Catalog.cpp:68-106`) împarte `name TYPE` după
+    spațiu și ignoră restul (`pair.size() >= 2`), deci `id INT UNIQUE AUTOINCREMENT` e citit fără
+    erori de codul vechi. De extins: `Columns` (`AST/Columns/Columns.hpp`) cu flaguri, plus `save()`.
+  - **Ce se refolosește.** `checkRow`, `keyOf`, `insertRow(row, enforceUnique)` și verificarea din
+    `executeUpdate` se generalizează de la „coloana 0” la „fiecare coloană UNIQUE”. Semantica rămâne:
+    comparație după tip, NULL în afara unicității, verificare înainte de WAL, rescrierea și
+    recovery-ul nu verifică.
+  - **Index.** `BPlusTree` e unul singur, cu chei `int`. Pentru mai multe coloane UNIQUE sau UNIQUE
+    pe STRING: un index per coloană, sau verificare prin scan (O(N) per INSERT, același ordin cu
+    `rebuildIndex`, care rulează oricum la fiecare query, vezi P2). Indexul pentru `WHERE x = …`
+    poate rămâne pe o singură coloană.
+  - **AUTOINCREMENT.** Doar pe INT, implică UNIQUE. Valoarea se generează în `Engine::executeInsert`
+    **înainte** de `wal->logInsert`, ca WAL-ul să aibă valoarea concretă și replay-ul să fie
+    determinist. Contor: `max(cheie) + 1` calculat la `rebuildIndex` (scanează deja tot), sau
+    persistat în catalog (atunci id-urile șterse nu se refolosesc). Coloană omisă din INSERT sau
+    NULL → se generează; valoare explicită → permisă, verificată ca unică, mută contorul dacă e mai
+    mare. `Table::nextKey` **nu** e bun ca contor: numără rânduri și se resetează la rescriere.
+  - **Protocol.** Fără breaking change: erori noi (`Duplicate key` pe alte coloane) și, opțional,
+    `"insert_id"` în `{"type":"ok"}` după INSERT. `PROTOCOL_VERSION` rămâne.
 
 ---
 
@@ -202,7 +229,7 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
   orice tip. Storage/WAL: marker `%N` prin `encodeValue`/`decodeValue` (`StringUtils.hpp`) —
   `walEncode` scrie `%` doar urmat de 2 cifre hex, deci nu există coliziune. WHERE: orice
   comparație cu NULL e falsă (inclusiv `!=`), `= NULL` nu se potrivește cu nimic. Index: NULL în
-  prima coloană INT e permis, fără intrare în index. Pe fir: `null` JSON, nu `"NULL"`
+  cheie (prima coloană, dacă e INT) e permis, fără intrare în index. Pe fir: `null` JSON, nu `"NULL"`
   (`PROTOCOL_VERSION` rămâne `1.0.0`, nimic publicat încă). GUI afișează `NULL`.
   Bug-uri reparate pe drum: (1) replay-ul WAL construia `VALUES (1,Alice Smith)` fără ghilimele —
   orice string cu spațiu/virgulă/`'`/gol pica la parsare și rândul se pierdea; acum `sqlLiteral`
@@ -263,17 +290,88 @@ Toate verificate prin mutații (fiecare fix dezactivat → testele lui pică). D
 
 ### Deschise — găsite cu `teste.md` (§9)
 Comportamentul real al engine-ului, documentat în `teste.md`. Primele patru ar trebui rezolvate
-înainte de pachetul Python (schimbă ce vede un client); ultimul poate rămâne.
+înainte de pachetul Python (schimbă ce vede un client); ultimul poate rămâne. Toate cele cinci sunt
+rezolvate acum; ce s-a găsit pe drum e mai jos, la „Deschise — găsite pe drum”.
 
-- [ ] **Id-uri duplicate + index inconsistent** — prima coloană INT e indexată, dar nu unică:
-  `SELECT ... WHERE id = 1` prin index întoarce **un** rând, `UPDATE ... WHERE id = 1` le modifică
-  pe toate. Decizie de luat: cheie unică (INSERT duplicat = eroare) sau index cu chei multiple.
-- [ ] **Coloane duplicate în CREATE TABLE** — `(a INT, a STRING)` e acceptat.
-- [ ] **`=` / `!=` compară text** — `9.50 ≠ 9.5`, `TRUE ≠ true`. Ar trebui comparat după tipul
-  coloanei (numeric la INT/FLOAT, fără majuscule la BOOL).
-- [ ] **`_` la începutul unui nume** e aruncat în tăcere de lexer (`_x` devine `x`).
-- [ ] **`CREATE DATABASE` pe un nume existent** nu dă eroare (inofensiv, dar asimetric cu
-  `CREATE TABLE`).
+- [x] **Id-uri duplicate + index inconsistent** — decis: cheie unică. Prima coloană a tabelului,
+  dacă e INT, nu mai acceptă o valoare existentă (`(name STRING, id INT)` nu are nicio cheie): `Insert/Update failed for table T: Duplicate key N for column id`.
+  Cheia se compară ca int (`007` = `7`); NULL nu intră în unicitate (oricâte rânduri). Verificarea e
+  în `Table::checkRow` (rulată de `insertRow` **înainte** de scrierea pe pagină) și, la UPDATE, în
+  `Engine::executeUpdate` pe starea calculată de `previewUpdate`, doar când SET atinge cheia. Ambele
+  verificări sunt înainte de WAL, deci un statement respins nu lasă nimic necommitat. Rescrierea
+  din `deleteRow`/`updateRow` și replay-ul WAL nu verifică unicitatea (`insertRow(row, false)`,
+  `!inRecovery`), ca duplicatele vechi să nu dispară în tăcere; ele rămân citibile, iar
+  `WHERE id = x` întoarce tot un singur rând dintre ele. Bonus: un INT care trece de verificarea de
+  cifre dar depășește `int` (`99999999999`) era scris pe pagină și abia apoi raporta eroare; acum
+  nu se mai scrie nimic. Teste: `EngineTest.DuplicateKeyInsertIsRejected`, `ManyNullKeysAreAllowed`,
+  `UpdateToExistingKeyIsRejected`, `UpdateWithoutKeyConflictSucceeds`,
+  `TableTest.DuplicateKeyIsRejectedUnlessUniquenessIsOff`, `OverflowingKeyIsNotStored`,
+  `WALRecoveryTest.RejectedInsertIsNotLogged`, `NetworkServerTest.DuplicateKeyInsertReturnsError`
+  (29). Mutații: fără căutarea din `checkRow`, fără verificarea din `executeUpdate`, `checkRow` după
+  `logInsert`, rescriere cu unicitate, `insertRow` fără `checkRow` → fiecare pică cel puțin un test.
+  Docs: README (Names), `CLIENT_PROTOCOL.md` §5.3, §7.3 și lista de erori, `teste.md` 2.9, 3.10,
+  3.20, 4.1, 4.16, §9. `PROTOCOL_VERSION` rămâne `1.0.0` (doar un mesaj de eroare nou).
+  Inițial: prima coloană (INT) e indexată, dar nu unică: `SELECT ... WHERE id = 1` prin index
+  întoarce **un** rând, `UPDATE ... WHERE id = 1` le modifică pe toate.
+  Regulă temporară: cheia implicită pe poziția 0 se înlocuiește cu cheie declarată, vezi
+  P1 „Constrângeri de coloană: UNIQUE și AUTOINCREMENT”.
+- [x] **Coloane duplicate în CREATE TABLE** — `(a INT, a STRING)` dă acum
+  `Column a specified more than once`, același text ca la INSERT, și nu creează nimic. Verificarea
+  e în `Engine::executeCreate` (helper `requireUniqueNames`), nu în parser, fiindcă un `ParseError`
+  nu poate purta numele coloanei. Numele țin cont de majuscule, deci `(a INT, A STRING)` rămâne
+  valid. CREATE TABLE nu e în WAL, iar cataloagele vechi cu duplicate se încarcă la fel ca înainte
+  (`findColumn` o ia pe prima). Inițial: acceptat, doar prima copie era accesibilă.
+  Test: `EngineTest.CreateTableWithDuplicateColumnsIsRejected`.
+- [x] **`=` / `!=` compară text** — `evaluateCondition` alege comparația după tipul coloanei:
+  INT/FLOAT compară numeric la toți cei 6 operatori (`9.50 = 9.5`, `007 = 7`, deci `=` e adevărat
+  exact când nici `<`, nici `>` nu sunt), BOOL compară valoarea logică la `=` / `!=` (`TRUE`, `true`,
+  `1` sunt egale), STRING rămâne pe text. Lista de BOOL acceptate stă acum într-un singur loc
+  (`boolValue` din `Table.cpp`), folosită și de validare, și de comparație. Limită: INT-urile peste
+  2^53 se compară aproximativ. Pe drum:
+  - **Calea prin index** (`selectRow`) folosea `std::stoi`: `id = 5.5` întorcea rândul 5, iar
+    `id = 'abc'` / `id = 99999999999` trimiteau clientului eroarea `stoi`. Acum literalul se citește
+    cu `stod`; doar un întreg exact care încape în `int` merge în index, restul cade pe scanarea
+    completă, care dă răspunsul numeric corect.
+  - **SELECT și UPDATE/DELETE nu mai sunt inconsecvente**: `previewUpdate` / `previewDelete`
+    folosesc `evaluateCondition`, nu indexul, deci `SELECT ... WHERE id = 007` găsea rândul, dar
+    `UPDATE ... WHERE id = 007` nu atingea nimic.
+  - **Decis: un literal de alt tip în WHERE e eroare** (`requireValidCondition` din `Engine.cpp`,
+    pentru SELECT, UPDATE, DELETE): `age = 'abc'` → `Type validation failed (invalid value for
+    column age of type INT)`, în loc de 0 rânduri. Pe INT și FLOAT merge orice număr
+    (`age > 2.5`, `id = 5.0`), pe BOOL doar cele 6 forme. `IS [NOT] NULL` și `= NULL` nu se
+    verifică. Replay-ul WAL nu e afectat (rulează DELETE fără WHERE și INSERT).
+  Teste: `EngineTest.EqualityComparesByColumnType`, `KeyLookupUsesNumericValue`,
+  `WrongTypeLiteralInWhereIsAnError`.
+- [x] **`_` la începutul unui nume** — `tokenize` intra în `readWord` doar pe `isalpha`, deci un
+  `_` de la început cădea pe ramura de caractere necunoscute și era aruncat (`_x` devenea `x`).
+  Acum intră și pe `_`; cast-ul la `unsigned char` evită UB la octeții UTF-8.
+  Teste: `LexerTest.UnderscoreStartsAnIdentifier`, `ParserTest.ColumnNameMayStartWithUnderscore`.
+- [x] **`CREATE DATABASE` pe un nume existent** — dă acum `Database '<name>' already exists` și
+  lasă fișierele neatinse. Existența se judecă după `.db`, ca la `USE` și `DROP` (pe Windows, fără
+  majuscule). Remote e blocat oricum (§7.8), deci eroarea se vede doar în GUI.
+  Test: `EngineTest.CreateExistingDatabaseThrows`.
+- [x] **Bonus — `UPDATE t SET a = 1, a = 2`** *(găsit pe drum)* — ultima atribuire câștiga în
+  tăcere. Acum dă `Column a specified more than once`, înainte de WAL, ca la INSERT `(a, a)`.
+  Test: `EngineTest.UpdateWithRepeatedColumnIsRejected`.
+
+Toate verificate prin mutații (lexer fără `_`, CREATE și SET fără verificarea de duplicate, `=` din
+nou pe text, indexul din nou pe `stoi`, WHERE fără validarea valorii, CREATE DATABASE fără `throw`
+→ fiecare pică cel puțin un test). `teste.md` re-rulat integral prin engine. Docs: `teste.md` 0,
+1.9, 1.12, §3.2, 3.14, 3.16, 3.17, 3.26, 4.17 (nou), 7.2, §9; README (WHERE, Errors, Names,
+CREATE DATABASE); `CLIENT_PROTOCOL.md` §5.2, §6.1, §7.1, §7.3, §7.4, §7.5, §7.8, §8, §10.
+`PROTOCOL_VERSION` rămâne `1.0.0` (doar mesaje de eroare noi).
+
+### Deschise — găsite pe drum
+- [ ] **Caractere necunoscute ignorate în tăcere de lexer** — ramura `else { position++; }` din
+  `Lexer::tokenize` aruncă orice nu recunoaște: `;`, `"`, `@`, `.` izolat, `- 5` (devine `5`).
+  `teste.md` 2.11 și 8.3 depind de asta (`"Dan"` merge din întâmplare, `;` final e ignorat), deci
+  un fix trebuie să păstreze `;` și să decidă ce face cu restul (eroare de parsare, probabil).
+- [ ] **`<` / `>` pe STRING compară numeric** — `evaluateCondition` trece STRING-ul prin `stod`, deci
+  `n < '9'` nu găsește `'10'`, iar `n > 'abc'` nu găsește nimic. Ar trebui comparat lexicografic
+  (sau refuzat). La fel `<` / `>` pe BOOL, unde merg doar `1` / `0`.
+- [ ] **FLOAT acceptă `.` fără nicio cifră** — `validateValueForType` verifică doar „cifre și cel
+  mult un `.`”, deci `'.'` și `'-.'` se stochează într-o coloană FLOAT (și trec ca literal în WHERE,
+  unde nu se potrivesc cu nimic). Ar trebui cerută cel puțin o cifră.
 
 ### Bug-uri adevărate în NetworkServer.cpp
    Fiindcă tot revii la fișierul ăsta — astea sunt problemele reale din el:

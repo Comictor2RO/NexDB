@@ -333,3 +333,16 @@ TEST(ParserTest, EqualsNullAndSetNullParse) {
     EXPECT_FALSE(assignments[0].second.has_value());
     EXPECT_EQ(assignments[1].second, "NULL");
 }
+
+// Test 22: a column name may start with '_'; the lexer used to drop the '_' and the
+// column was stored as x
+TEST(ParserTest, ColumnNameMayStartWithUnderscore) {
+    CreateStatement *create = nullptr;
+    auto stmt = parseOk("CREATE TABLE t (_x INT)", create);
+    ASSERT_NE(create, nullptr);
+
+    const auto &cols = create->getColumns();
+    ASSERT_EQ(cols.size(), 1u);
+    EXPECT_EQ(cols[0].name, "_x");
+    EXPECT_EQ(cols[0].type, "INT");
+}
