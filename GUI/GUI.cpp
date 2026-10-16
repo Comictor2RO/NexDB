@@ -1,11 +1,14 @@
 #include "GUI.hpp"
 #include "Platform.hpp"
+#include "Zoom.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 
 // Layout, in pixels
@@ -25,6 +28,12 @@ static constexpr int   MIN_WINDOW_H = 560;
 static constexpr float EDGE        = 5;     // window resize grab zone
 static constexpr float SPACING     = 1;
 static constexpr float EDITOR_FONT = 18;
+
+// UI zoom (Ctrl+wheel). The upper bound is also capped by maxZoom()
+static constexpr float MIN_ZOOM  = 0.8f;
+static constexpr float MAX_ZOOM  = 2.0f;
+static constexpr float ZOOM_STEP = 0.1f;
+static constexpr const char *SETTINGS_FILE = "gui_settings.ini";
 
 // Window resize edges
 static constexpr int EDGE_LEFT = 1, EDGE_RIGHT = 2, EDGE_TOP = 4, EDGE_BOTTOM = 8;
@@ -115,7 +124,7 @@ static std::string formatMs(double ms)
     return buf;
 }
 
-static Font loadFont(const char *path)
+static Font loadFont(const char *path, int size)
 {
     // ASCII, Romanian diacritics (comma and cedilla forms) and the few symbols the UI uses
     std::vector<int> codepoints;
@@ -124,9 +133,37 @@ static Font loadFont(const char *path)
     for (int c : {0x0102, 0x0103, 0x00C2, 0x00E2, 0x00CE, 0x00EE, 0x0218, 0x0219, 0x021A, 0x021B,
                   0x015E, 0x015F, 0x0162, 0x0163, 0x00B7, 0x2014, 0x2026, 0x2022})
         codepoints.push_back(c);
-    Font font = LoadFontEx(path, 32, codepoints.data(), (int)codepoints.size());
+    Font font = LoadFontEx(path, size, codepoints.data(), (int)codepoints.size());
     SetTextureFilter(font.texture, TEXTURE_FILTER_BILINEAR);
     return font;
+}
+
+// gui_settings.ini is key=value lines. Unknown keys are skipped (unlike config.json), so
+// more settings can be added later; a missing file or a bad value means 100%
+static float loadZoomSetting()
+{
+    std::ifstream in(SETTINGS_FILE);
+    std::string line;
+    while (std::getline(in, line))
+    {
+        size_t eq = line.find('=');
+        if (eq == std::string::npos || trim(line.substr(0, eq)) != "zoom")
+            continue;
+        std::string value = trim(line.substr(eq + 1));
+        char *end = nullptr;
+        float zoom = std::strtof(value.c_str(), &end);
+        if (!value.empty() && *end == '\0' && std::isfinite(zoom))
+            return zoom;   // setZoom clamps it
+    }
+    return 1;
+}
+
+static void saveZoomSetting(float zoom)
+{
+    std::ofstream out(SETTINGS_FILE);
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%.1f", zoom);
+    out << "zoom=" << buf << '\n';
 }
 
 static Color logColor(const std::string &line, const Theme &theme)
@@ -185,16 +222,14 @@ void GUI::run()
     // handled here. RESIZABLE keeps raylib updating the framebuffer on SetWindowSize.
     SetConfigFlags(FLAG_WINDOW_UNDECORATED | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT);
     InitWindow(1280, 760, "NexDB");
-    SetWindowMinSize(MIN_WINDOW_W, MIN_WINDOW_H);
     SetExitKey(KEY_NULL);   // Esc must not close the window
     SetTargetFPS(60);
-    int monitor = GetCurrentMonitor();
-    SetWindowPosition((GetMonitorWidth(monitor) - 1280) / 2, (GetMonitorHeight(monitor) - 760) / 2);
 
-    regular  = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Regular.ttf");
-    bold     = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Bold.ttf");
-    italic   = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Italic.ttf");
-    semibold = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-SemiBold.ttf");
+    // Also sets the minimum window size and loads the fonts. A large saved zoom can grow
+    // the window, so it is centered afterwards
+    setZoom(loadZoomSetting());
+    int monitor = GetCurrentMonitor();
+    SetWindowPosition((GetMonitorWidth(monitor) - GetScreenWidth()) / 2, (GetMonitorHeight(monitor) - GetScreenHeight()) / 2);
 
     refreshExplorer(true);
 
@@ -212,7 +247,7 @@ void GUI::run()
         handleWheel(layout);
 
         bool editorOwnsMouse = drag == Drag::None && !mouseConsumed;
-        if (editor.update(layout.editor, regular, EDITOR_FONT, editorOwnsMouse))
+        if (editor.update(layout.editor, regular, EDITOR_FONT, uiZoom, editorOwnsMouse))
             deferred.push_back([this] { runEditor(); });
         if (drag == Drag::None && CheckCollisionPointRec(GetMousePosition(), layout.editor))
             wantedCursor = MOUSE_CURSOR_IBEAM;
@@ -223,6 +258,9 @@ void GUI::run()
 
         BeginDrawing();
         ClearBackground(theme.windowBg);
+        // Everything is laid out in logical pixels; the camera scales it to the screen and
+        // SetMouseScale (setZoom) maps the mouse back
+        BeginMode2D(Camera2D{{0, 0}, {0, 0}, 0, uiZoom});
         if (layout.left.width > 1)
             drawExplorer(layout.left);
         drawCenterPanel(layout);
@@ -230,10 +268,12 @@ void GUI::run()
             drawRightPanel(layout.right);
         drawTitleBar(layout);
         drawStatusBar(layout);
+        EndMode2D();
         EndDrawing();
 
         // Clicks only queue their action; running it here means a query never replaces
-        // results, logs or the explorer while a draw loop is iterating over them
+        // results, logs or the explorer while a draw loop is iterating over them, and a
+        // zoom never unloads a font the frame's draw batch still uses
         std::vector<std::function<void()>> actions;
         actions.swap(deferred);
         for (auto &action : actions)
@@ -246,6 +286,7 @@ void GUI::run()
         }
     }
 
+    saveZoomSetting(uiZoom);
     if (serverRunning)
     {
         server.stop();
@@ -294,8 +335,8 @@ void GUI::animatePanels()
 
 void GUI::clampSizes()
 {
-    float w = (float)GetScreenWidth();
-    float h = (float)GetScreenHeight();
+    float w = GetScreenWidth() / uiZoom;
+    float h = GetScreenHeight() / uiZoom;
 
     // Side panels: keep at least MIN_CENTER for the center, shrinking both proportionally
     leftWidth = std::max(MIN_SIDE, leftWidth);
@@ -328,8 +369,8 @@ void GUI::clampSizes()
 GUI::Layout GUI::computeLayout() const
 {
     Layout l{};
-    float w = (float)GetScreenWidth();
-    float h = (float)GetScreenHeight();
+    float w = GetScreenWidth() / uiZoom;   // logical pixels, see run()
+    float h = GetScreenHeight() / uiZoom;
 
     l.titleBar  = Rectangle{0, 0, w, TITLE_H};
     l.statusBar = Rectangle{0, h - STATUS_H, w, STATUS_H};
@@ -378,15 +419,17 @@ Vector2 GUI::screenCursor() const
     if (Platform::getCursorScreenPos(x, y))
         return Vector2{(float)x, (float)y};
     Vector2 p = GetWindowPosition();
-    Vector2 m = GetMousePosition();
-    return Vector2{p.x + m.x, p.y + m.y};
+    Vector2 m = GetMousePosition();   // logical, back to screen pixels
+    return Vector2{p.x + m.x * uiZoom, p.y + m.y * uiZoom};
 }
 
 void GUI::handleWindowAndSplitters(const Layout &l)
 {
+    // Logical, like the mouse. The window itself (dragStartWindow, SetWindowSize) is in
+    // screen pixels
     Vector2 mouse = GetMousePosition();
-    float w = (float)GetScreenWidth();
-    float h = (float)GetScreenHeight();
+    float w = GetScreenWidth() / uiZoom;
+    float h = GetScreenHeight() / uiZoom;
 
     if (drag == Drag::None)
     {
@@ -428,7 +471,7 @@ void GUI::handleWindowAndSplitters(const Layout &l)
             drag = Drag::ResizeWindow;
             resizeEdges = edges;
             dragStartCursor = screenCursor();
-            dragStartWindow = Rectangle{pos.x, pos.y, w, h};
+            dragStartWindow = Rectangle{pos.x, pos.y, (float)GetScreenWidth(), (float)GetScreenHeight()};
             mouseConsumed = true;
         }
         else if (CheckCollisionPointRec(mouse, l.titleBar) && !onButton)
@@ -444,7 +487,7 @@ void GUI::handleWindowAndSplitters(const Layout &l)
                 lastTitleClick = now;
                 drag = Drag::MoveWindow;
                 dragStartCursor = screenCursor();
-                dragStartWindow = Rectangle{pos.x, pos.y, w, h};
+                dragStartWindow = Rectangle{pos.x, pos.y, (float)GetScreenWidth(), (float)GetScreenHeight()};
                 restoreOnDrag = maximized;
             }
             mouseConsumed = true;
@@ -495,20 +538,21 @@ void GUI::handleWindowAndSplitters(const Layout &l)
             float dx = c.x - dragStartCursor.x;
             float dy = c.y - dragStartCursor.y;
             Rectangle r = dragStartWindow;
+            float minW = std::round(MIN_WINDOW_W * uiZoom), minH = std::round(MIN_WINDOW_H * uiZoom);
             if (resizeEdges & EDGE_LEFT)
             {
-                r.width = std::max((float)MIN_WINDOW_W, dragStartWindow.width - dx);
+                r.width = std::max(minW, dragStartWindow.width - dx);
                 r.x = dragStartWindow.x + dragStartWindow.width - r.width;
             }
             if (resizeEdges & EDGE_RIGHT)
-                r.width = std::max((float)MIN_WINDOW_W, dragStartWindow.width + dx);
+                r.width = std::max(minW, dragStartWindow.width + dx);
             if (resizeEdges & EDGE_TOP)
             {
-                r.height = std::max((float)MIN_WINDOW_H, dragStartWindow.height - dy);
+                r.height = std::max(minH, dragStartWindow.height - dy);
                 r.y = dragStartWindow.y + dragStartWindow.height - r.height;
             }
             if (resizeEdges & EDGE_BOTTOM)
-                r.height = std::max((float)MIN_WINDOW_H, dragStartWindow.height + dy);
+                r.height = std::max(minH, dragStartWindow.height + dy);
             SetWindowPosition((int)r.x, (int)r.y);
             SetWindowSize((int)r.width, (int)r.height);
             break;
@@ -568,6 +612,15 @@ void GUI::handleWheel(const Layout &l)
     if ((wheel.x == 0 && wheel.y == 0) || drag != Drag::None)
         return;
 
+    // Ctrl+wheel zooms the whole UI instead of scrolling (the editor checks Ctrl too)
+    bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    if (ctrl && wheel.y != 0)
+    {
+        float zoom = uiZoom + (wheel.y > 0 ? ZOOM_STEP : -ZOOM_STEP);
+        deferred.push_back([this, zoom] { setZoom(zoom); });
+        return;
+    }
+
     Vector2 mouse = GetMousePosition();
     bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     if (CheckCollisionPointRec(mouse, l.left))
@@ -612,11 +665,64 @@ void GUI::toggleMaximize()
             RestoreWindow();
         else
         {
+            // A zoom while maximized may have raised the minimum size
+            restoreRect.width = std::max(restoreRect.width, std::round(MIN_WINDOW_W * uiZoom));
+            restoreRect.height = std::max(restoreRect.height, std::round(MIN_WINDOW_H * uiZoom));
             SetWindowSize((int)restoreRect.width, (int)restoreRect.height);
             SetWindowPosition((int)restoreRect.x, (int)restoreRect.y);
         }
         maximized = false;
     }
+}
+
+void GUI::setZoom(float zoom)
+{
+    zoom = std::clamp(std::round(zoom * 10) / 10, MIN_ZOOM, maxZoom());
+    if (zoom == uiZoom && regular.texture.id != 0)
+        return;   // the first call (from run) always loads the fonts
+    uiZoom = zoom;
+    SetMouseScale(1 / zoom, 1 / zoom);   // GetMousePosition() now returns logical pixels
+
+    // The minimum window is MIN_WINDOW_W x MIN_WINDOW_H logical pixels
+    int minW = (int)std::round(MIN_WINDOW_W * zoom);
+    int minH = (int)std::round(MIN_WINDOW_H * zoom);
+    SetWindowMinSize(minW, minH);
+    if (!maximized && (GetScreenWidth() < minW || GetScreenHeight() < minH))
+        SetWindowSize(std::max(GetScreenWidth(), minW), std::max(GetScreenHeight(), minH));
+
+    loadFonts();
+}
+
+float GUI::maxZoom() const
+{
+    // The largest zoom whose minimum window still fits the work area, so the layout
+    // (MIN_CENTER, MIN_SIDE...) fits even when maximized
+    int x, y, w, h;
+    if (!Platform::getWorkArea(GetWindowHandle(), x, y, w, h))
+    {
+        int monitor = GetCurrentMonitor();
+        w = GetMonitorWidth(monitor);
+        h = GetMonitorHeight(monitor);
+    }
+    float fit = std::min({MAX_ZOOM, (float)w / MIN_WINDOW_W, (float)h / MIN_WINDOW_H});
+    return std::max(1.0f, std::floor(fit * 10 + 0.001f) / 10);
+}
+
+void GUI::loadFonts()
+{
+    // Baked at the size they end up on screen, so zoomed text is as sharp as at 100%
+    if (regular.texture.id != 0)
+    {
+        UnloadFont(regular);
+        UnloadFont(bold);
+        UnloadFont(italic);
+        UnloadFont(semibold);
+    }
+    int size = (int)std::round(32 * uiZoom);
+    regular  = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Regular.ttf", size);
+    bold     = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Bold.ttf", size);
+    italic   = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-Italic.ttf", size);
+    semibold = loadFont("resources/asap-condensed/asap-condensed/AsapCondensed-SemiBold.ttf", size);
 }
 
 // ---------------------------------------------------------------- widget helpers
@@ -660,12 +766,13 @@ void GUI::drawSectionHeader(Rectangle r, const char *title, bool roundedTop) con
         DrawLineEx(Vector2{r.x, r.y + 0.5f}, Vector2{r.x + r.width, r.y + 0.5f}, 1, theme.border);
     }
     DrawLineEx(Vector2{r.x, r.y + r.height - 0.5f}, Vector2{r.x + r.width, r.y + r.height - 0.5f}, 1, theme.border);
-    DrawTextEx(semibold, title, Vector2{std::round(r.x + 12), std::round(r.y + (r.height - 15) / 2)}, 15, 1.5f, theme.textDim);
+    DrawTextEx(semibold, title, Vector2{snapToPixel(r.x + 12, uiZoom), snapToPixel(r.y + (r.height - 15) / 2, uiZoom)},
+               15, 1.5f, theme.textDim);
 }
 
 void GUI::drawText(const Font &font, const std::string &s, float x, float y, float size, Color color) const
 {
-    DrawTextEx(font, s.c_str(), Vector2{std::round(x), std::round(y)}, size, SPACING, color);
+    DrawTextEx(font, s.c_str(), Vector2{snapToPixel(x, uiZoom), snapToPixel(y, uiZoom)}, size, SPACING, color);
 }
 
 float GUI::measure(const Font &font, const std::string &s, float size) const
@@ -802,7 +909,7 @@ void GUI::drawStatusBar(const Layout &l)
     Rectangle dbItem = item(serverItem.x + serverItem.width + 6, "DB: " + currentDatabase, 0, false);
     (void)dbItem;
 
-    // Right: theme toggle and the editor cursor position
+    // Right: theme toggle, the editor cursor position and the zoom when it is not 100%
     std::string themeLabel = isDark ? "Theme: Dark" : "Theme: Light";
     float themeW = measure(regular, themeLabel, size) + 16;
     Rectangle themeItem = item(bar.width - 4 - themeW, themeLabel, 0, true);
@@ -811,7 +918,14 @@ void GUI::drawStatusBar(const Layout &l)
 
     std::string position = "Ln " + std::to_string(editor.getLine()) + ", Col " + std::to_string(editor.getColumn());
     float posW = measure(regular, position, size) + 16;
-    item(themeItem.x - 6 - posW, position, 0, false);
+    Rectangle posItem = item(themeItem.x - 6 - posW, position, 0, false);
+
+    if (uiZoom != 1)
+    {
+        std::string zoomLabel = "Zoom " + std::to_string((int)std::lround(uiZoom * 100)) + "%";
+        float zoomW = measure(regular, zoomLabel, size) + 16;
+        item(posItem.x - 6 - zoomW, zoomLabel, 0, false);
+    }
 }
 
 // ---------------------------------------------------------------- side panels
@@ -819,7 +933,7 @@ void GUI::drawStatusBar(const Layout &l)
 void GUI::drawExplorer(Rectangle panel)
 {
     drawPanel(panel);
-    BeginScissorMode((int)panel.x, (int)panel.y, (int)std::ceil(panel.width), (int)panel.height);
+    beginScissor(panel, uiZoom);
 
     Rectangle header = {panel.x, panel.y, panel.width, HEADER_H};
     drawSectionHeader(header, "EXPLORER", true);
@@ -839,7 +953,7 @@ void GUI::drawExplorer(Rectangle panel)
     EndScissorMode();
 
     Rectangle body = {panel.x + 4, panel.y + HEADER_H + 4, std::max(0.0f, panel.width - 8), panel.height - HEADER_H - 10};
-    BeginScissorMode((int)body.x, (int)body.y, (int)std::ceil(body.width), (int)body.height);
+    beginScissor(body, uiZoom);
 
     const float rowH = 24;
     Vector2 mouse = GetMousePosition();
@@ -968,7 +1082,7 @@ void GUI::drawExplorer(Rectangle panel)
 void GUI::drawRightPanel(Rectangle panel)
 {
     drawPanel(panel);
-    BeginScissorMode((int)panel.x, (int)panel.y, (int)std::ceil(panel.width), (int)panel.height);
+    beginScissor(panel, uiZoom);
     drawSectionHeader(Rectangle{panel.x, panel.y, panel.width, HEADER_H}, "PANEL", true);
 
     const char *line1 = "Reserved for future features";
@@ -1063,7 +1177,7 @@ void GUI::drawResults(Rectangle s)
 
     Vector2 mouse = GetMousePosition();
     bool mouseInBody = CheckCollisionPointRec(mouse, body);
-    BeginScissorMode((int)body.x, (int)body.y, (int)body.width, (int)body.height);
+    beginScissor(body, uiZoom);
 
     // Rows: only the visible ones are drawn
     int first = (int)(resultsScrollY / rowH);
@@ -1179,7 +1293,7 @@ void GUI::drawLogs(Rectangle s)
     logScroll = std::clamp(logScroll, 0, maxScroll);
     int startIdx = std::max(0, total - maxLines - logScroll);
 
-    BeginScissorMode((int)body.x, (int)body.y, (int)body.width, (int)body.height);
+    beginScissor(body, uiZoom);
     for (int i = startIdx; i < total && i < startIdx + maxLines; i++)
     {
         float y = body.y + (i - startIdx) * lineH;

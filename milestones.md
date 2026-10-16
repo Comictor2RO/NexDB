@@ -118,6 +118,22 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
     `Engine::getCurrentDatabase()`, `NetworkServer::getEngineMutex()`.
   - Limitări: Win+săgeți și snap-ul la marginea ecranului nu merg (fereastră fără bară nativă);
     screenshot-urile din README arată încă layout-ul vechi. GUI-ul nu e acoperit de suita de teste.
+- [x] ✅ **Zoom pe tot GUI-ul (Ctrl + rotița)** *(rezolvat)*
+  - Layout-ul rămâne în pixeli logici (nicio constantă / literal schimbat); desenarea trece printr-un
+    `Camera2D` cu `zoom = uiZoom`, iar `SetMouseScale(1/zoom)` face ca `GetMousePosition()` să fie
+    tot logic, deci hover / click / splitter-e / editorul merg neschimbate.
+  - Ce lucrează în pixeli reali e tratat separat: scissor-ele (`beginScissor` din `GUI/Zoom.hpp`,
+    folosit și de `TextEditor`), `GetScreenWidth/Height` (împărțite la zoom), resize-ul ferestrei și
+    mărimea minimă (`900×560 × zoom`, fereastra crește singură dacă e mai mică, și la restore după
+    maximize). Fonturile se recoc la `32 × zoom`, deci textul e la fel de clar la orice zoom; textul
+    e aliniat la pixel (`snapToPixel`) ca să nu iasă moale la 110% / 125%.
+  - 80% – 200%, pas 10%, plafonat la cât încape fereastra minimă în work area (pe 2560×1600 la 150%
+    scaling: 200%). `setZoom` rulează doar din `deferred`, după `EndDrawing`, ca un font să nu fie
+    eliberat cât timp batch-ul de desenare încă îl folosește. Indicator „Zoom 130%” în status bar.
+  - Salvat în `gui_settings.ini` (lângă exe, `key=value`; cheile necunoscute sunt ignorate, valori
+    invalide → 100%).
+  - Limitări: liniile de 1 px pot ieși puțin moi la zoom fracționar; zona de resize de la margine
+    crește odată cu zoom-ul; un touchpad face cel mult un pas pe cadru.
 - [ ] Compatibilitate wire cu psql / pgAdmin / MySQL Workbench (irelevant pentru local-only)
 - [ ] TLS (irelevant pentru local-only)
 

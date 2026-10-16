@@ -64,6 +64,7 @@ class GUI {
         Font bold{};
         Font italic{};
         Font semibold{};
+        float uiZoom = 1;             // Ctrl+wheel; the whole UI is drawn scaled by this
 
         // Log, written by the GUI and by the server's io threads
         std::vector<std::string> logs;
@@ -139,6 +140,9 @@ class GUI {
         void runEditor();
         void toggleServer();
         void toggleMaximize();
+        void setZoom(float zoom);     // never while drawing (reloads the fonts): via deferred
+        float maxZoom() const;
+        void loadFonts();
         void refreshExplorer(bool wait);
         void computeColumnWidths();
         void addLog(const std::string &message);

@@ -1,4 +1,5 @@
 #include "TextEditor.hpp"
+#include "Zoom.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -349,11 +350,12 @@ int TextEditor::getColumn() const
     return column;
 }
 
-bool TextEditor::update(Rectangle area, const Font &f, float size, bool mouseAvailable)
+bool TextEditor::update(Rectangle area, const Font &f, float size, float uiZoom, bool mouseAvailable)
 {
     bounds = area;
     font = f;
     fontSize = size;
+    zoom = uiZoom;
 
     bool ctrl  = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
@@ -391,7 +393,8 @@ bool TextEditor::update(Rectangle area, const Font &f, float size, bool mouseAva
         else
             mouseSelecting = false;
     }
-    if (mouseAvailable && inside)
+    // Ctrl+wheel is the GUI's zoom, not a scroll
+    if (mouseAvailable && inside && !ctrl)
     {
         Vector2 wheel = GetMouseWheelMoveV();
         if (shift)
@@ -553,7 +556,7 @@ void TextEditor::draw(const Theme &theme) const
     float textOffset = (lh - fontSize) / 2;
 
     // Pass 1: current-line highlight and line numbers (clipped to the whole editor)
-    BeginScissorMode((int)bounds.x, (int)bounds.y, (int)bounds.width, (int)bounds.height);
+    beginScissor(bounds, zoom);
     for (int i = first; i <= last; i++)
     {
         float y = area.y + i * lh - scrollY;
@@ -561,13 +564,13 @@ void TextEditor::draw(const Theme &theme) const
             DrawRectangleRec(Rectangle{bounds.x, y, bounds.width, lh}, theme.lineHighlight);
         std::string number = std::to_string(i + 1);
         float w = measure(number);
-        DrawTextEx(font, number.c_str(), Vector2{bounds.x + gutter - 14 - w, y + textOffset}, fontSize, SPACING,
-                   i == cursorLine ? theme.text : theme.textDim);
+        DrawTextEx(font, number.c_str(), Vector2{snapToPixel(bounds.x + gutter - 14 - w, zoom), snapToPixel(y + textOffset, zoom)},
+                   fontSize, SPACING, i == cursorLine ? theme.text : theme.textDim);
     }
     EndScissorMode();
 
     // Pass 2: selection, highlighted text and cursor (clipped to the text area)
-    BeginScissorMode((int)area.x, (int)bounds.y, (int)(bounds.x + bounds.width - area.x), (int)bounds.height);
+    beginScissor(Rectangle{area.x, bounds.y, bounds.x + bounds.width - area.x, bounds.height}, zoom);
 
     // Find the string state at the first visible line, since a string can span lines
     size_t begin = lineStartByIndex(first);
@@ -634,7 +637,7 @@ void TextEditor::draw(const Theme &theme) const
                 tokenEnd = nextChar(text, pos);
 
             std::string token = text.substr(pos, tokenEnd - pos);
-            DrawTextEx(font, token.c_str(), Vector2{x, y + textOffset}, fontSize, SPACING, color);
+            DrawTextEx(font, token.c_str(), Vector2{snapToPixel(x, zoom), snapToPixel(y + textOffset, zoom)}, fontSize, SPACING, color);
             x += measure(token) + SPACING;
             pos = tokenEnd;
         }
@@ -644,7 +647,7 @@ void TextEditor::draw(const Theme &theme) const
 
     if (text.empty())
         DrawTextEx(font, "Write a query. Ctrl+Enter runs it (or the selection), Ctrl+Up/Down browses history.",
-                   Vector2{area.x, area.y + textOffset}, fontSize, SPACING, theme.textDim);
+                   Vector2{snapToPixel(area.x, zoom), snapToPixel(area.y + textOffset, zoom)}, fontSize, SPACING, theme.textDim);
 
     bool blinkOn = std::fmod(GetTime() - blinkStart, 1.0) < 0.55;
     if (blinkOn)

@@ -14,9 +14,10 @@
 class TextEditor {
     public:
         // Processes this frame's keyboard and mouse input. mouseAvailable is false while
-        // another widget owns the mouse (a splitter or window drag).
+        // another widget owns the mouse (a splitter or window drag). zoom is the GUI's UI
+        // zoom: bounds are in logical pixels, but scissor rects need screen pixels.
         // Returns true when the user asked to run (Ctrl+Enter).
-        bool update(Rectangle bounds, const Font &font, float fontSize, bool mouseAvailable);
+        bool update(Rectangle bounds, const Font &font, float fontSize, float zoom, bool mouseAvailable);
         void draw(const Theme &theme) const;
 
         // What Ctrl+Enter / Run executes: the selection if there is one, otherwise everything
@@ -59,6 +60,7 @@ class TextEditor {
         // Captured by update() and reused by draw() and the helpers below
         Font font{};
         float fontSize = 18;
+        float zoom = 1;
         Rectangle bounds{};
 
         bool hasSelection() const { return anchor != cursor; }

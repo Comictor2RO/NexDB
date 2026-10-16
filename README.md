@@ -94,7 +94,8 @@ types. The active database is highlighted.
 ### Status bar
 
 Server state and port (**click to start or stop** the TCP server), the active database, the
-editor cursor position, and the theme (**click to switch** dark / light).
+editor cursor position, the UI zoom (only shown when it is not 100%), and the theme
+(**click to switch** dark / light).
 
 ### Keyboard shortcuts
 
@@ -104,6 +105,7 @@ editor cursor position, and the theme (**click to switch** dark / light).
 | `Ctrl+Up` / `Ctrl+Down` | Previous / next query from history |
 | `Ctrl+B` | Toggle the explorer |
 | `Ctrl+Alt+B` | Toggle the right panel |
+| `Ctrl` + mouse wheel | Zoom the whole interface (80–200%, capped by what fits on the screen; saved in `gui_settings.ini`) |
 | `Ctrl+A` / `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Select all / copy / cut / paste |
 | `Ctrl+Z` / `Ctrl+Y` (or `Ctrl+Shift+Z`) | Undo / redo |
 | `Ctrl+Left` / `Ctrl+Right` | Move by word |
