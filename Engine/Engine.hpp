@@ -39,6 +39,10 @@ class Engine {
         // Rows inserted / updated / deleted by the last query(); empty for any other statement
         std::optional<size_t> getLastAffected() const;
 
+        // The AUTOINCREMENT value the last INSERT stored (generated or given); empty if the
+        // table has no AUTOINCREMENT column or the last statement was not an INSERT
+        std::optional<long long> getLastInsertId() const;
+
         // Suppress WAL logging during crash recovery replays
         void setRecoveryMode(bool mode) { inRecovery = mode; }
 
@@ -52,6 +56,7 @@ class Engine {
         std::string currentDatabase;
         std::vector<std::string> lastColumns;
         std::optional<size_t> lastAffected;
+        std::optional<long long> lastInsertId;
 
         void executeCreate(const CreateStatement &statement);
         void executeInsert(const InsertStatement &statement);

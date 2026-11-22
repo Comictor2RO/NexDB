@@ -184,13 +184,55 @@ TEST(LexerTest, SignedNumbers) {
     EXPECT_EQ(tokens[5].value, "-1");
 }
 
-// Test 18: a sign that is not followed by a digit is still not a number
+// Test 18: a sign that is not followed by a digit is not a number. It used to be dropped,
+// so "- 5" became 5; now it is kept as an UNKNOWN token for the parser to reject
 TEST(LexerTest, LoneSignIsNotANumber) {
     Lexer lexer("- 5");
     auto tokens = lexer.tokenize();
-    ASSERT_GE(tokens.size(), 1u);
-    EXPECT_EQ(tokens[0].type, TokenType::NUMBER);
-    EXPECT_EQ(tokens[0].value, "5");
+    ASSERT_EQ(tokens.size(), 3u);
+    EXPECT_EQ(tokens[0].type, TokenType::UNKNOWN);
+    EXPECT_EQ(tokens[0].value, "-");
+    EXPECT_EQ(tokens[1].type, TokenType::NUMBER);
+    EXPECT_EQ(tokens[1].value, "5");
+}
+
+// Test 20: a leading dot followed by a digit is a number; the dot used to be dropped, so
+// .5 was stored as 5
+TEST(LexerTest, LeadingDotNumber) {
+    Lexer lexer(".5 -.5 +.5 5.");
+    auto tokens = lexer.tokenize();
+    ASSERT_EQ(tokens.size(), 5u);
+    EXPECT_EQ(tokens[0].value, ".5");
+    EXPECT_EQ(tokens[1].value, "-.5");
+    EXPECT_EQ(tokens[2].value, ".5");
+    EXPECT_EQ(tokens[3].value, "5.");
+    for (int i = 0; i < 4; i++)
+        EXPECT_EQ(tokens[i].type, TokenType::NUMBER);
+}
+
+// Test 21: characters the lexer does not know are kept as UNKNOWN tokens, one per character
+TEST(LexerTest, UnknownCharactersAreKept) {
+    Lexer lexer("\"Dan\" @ .");
+    auto tokens = lexer.tokenize();
+    // " Dan " @ . EOF
+    ASSERT_EQ(tokens.size(), 6u);
+    EXPECT_EQ(tokens[0].type, TokenType::UNKNOWN);
+    EXPECT_EQ(tokens[0].value, "\"");
+    EXPECT_EQ(tokens[1].type, TokenType::IDENTIFIER);
+    EXPECT_EQ(tokens[2].type, TokenType::UNKNOWN);
+    EXPECT_EQ(tokens[3].type, TokenType::UNKNOWN);
+    EXPECT_EQ(tokens[3].value, "@");
+    EXPECT_EQ(tokens[4].type, TokenType::UNKNOWN);
+    EXPECT_EQ(tokens[4].value, ".");
+}
+
+// Test 22: ';' is still accepted and ignored, anywhere
+TEST(LexerTest, SemicolonIsIgnored) {
+    Lexer lexer("SELECT * FROM t;;");
+    auto tokens = lexer.tokenize();
+    ASSERT_EQ(tokens.size(), 5u);
+    for (const Token &t : tokens)
+        EXPECT_NE(t.type, TokenType::UNKNOWN);
 }
 
 // Test 19: a name may start with '_'. The leading '_' used to be dropped as an unknown

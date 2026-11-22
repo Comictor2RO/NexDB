@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="BackendCodeEditorMiscSettings">
-    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="4" type="long" />
+    <option name="/Default/Environment/Hierarchy/GeneratedFilesCacheKey/Timestamp/@EntryValue" value="3" type="long" />
     <option name="/Default/Housekeeping/FeatureSuggestion/FeatureSuggestionManager/DisabledSuggesters/=SwitchToGoToActionSuggester/@EntryIndexedValue" value="true" type="bool" />
     <option name="/Default/RiderDebugger/RiderRestoreDecompile/RestoreDecompileSetting/@EntryValue" value="false" type="bool" />
   </component>
@@ -36,16 +36,25 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/editor.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/editor.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AST/Columns/Columns.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/AST/Columns/Columns.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Catalog/Catalog.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Catalog/Catalog.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Engine/Engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Engine/Engine.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Engine/Engine.hpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Frontend/Lexer/Lexer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Lexer/Lexer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend/Lexer/TokenType.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Lexer/TokenType.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Frontend/Parser/Parser.hpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GUI/GUI.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/GUI/GUI.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Networking/NetworkServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Networking/NetworkServer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Table/Table.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/Table/Table.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Table/Table.hpp" beforeDir="false" afterPath="$PROJECT_DIR$/Table/Table.hpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docs/CLIENT_PROTOCOL.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/CLIENT_PROTOCOL.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/milestones.md" beforeDir="false" afterPath="$PROJECT_DIR$/milestones.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/teste.md" beforeDir="false" afterPath="$PROJECT_DIR$/teste.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_bplustree.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_bplustree.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_catalog.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_catalog.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_engine.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_engine.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_lexer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_lexer.cpp" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/test_network.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_network.cpp" afterDir="false" />
@@ -65,7 +74,8 @@
     <option name="debugProfileId" value="61cf5273-1ce1-4188-ad73-94623220e73d" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="151" />
+    <option name="cachedIndexableFilesCount" value="158" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Debug" />
   <component name="Git.Settings">
@@ -80,61 +90,61 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.4830891386339144" />
-      <entry key="MS500" value="3.4814440463227894" />
-      <entry key="S2" value="11.342867387743933" />
-      <entry key="S5" value="25.0022400489365" />
-      <entry key="S10" value="42.02688608258023" />
-      <entry key="S30" value="82.09709304461602" />
-      <entry key="S60" value="106.54602337497887" />
-      <entry key="M2" value="126.12123854605119" />
-      <entry key="M5" value="159.9452702610163" />
-      <entry key="M10" value="201.63312539191617" />
-      <entry key="M15" value="230.11681508054656" />
-      <entry key="M30" value="303.0777309130789" />
-      <entry key="H1" value="604.1997561972407" />
-      <entry key="H2" value="1492.7738968184274" />
-      <entry key="H4" value="3191.9687774474223" />
-      <entry key="D1" value="8731.819338848924" />
-      <entry key="W1" value="10940.374436893373" />
+      <entry key="MS100" value="1.034817287751855" />
+      <entry key="MS500" value="1.7501299910212615" />
+      <entry key="S2" value="3.867164405961911" />
+      <entry key="S5" value="5.3744131990109585" />
+      <entry key="S10" value="6.105859674789668" />
+      <entry key="S30" value="6.681582563770736" />
+      <entry key="S60" value="6.851670896877123" />
+      <entry key="M2" value="7.709582602356933" />
+      <entry key="M5" value="19.43003973235576" />
+      <entry key="M10" value="45.95591334325366" />
+      <entry key="M15" value="68.53117736292337" />
+      <entry key="M30" value="128.16304565203598" />
+      <entry key="H1" value="278.3532125531279" />
+      <entry key="H2" value="790.6083728423555" />
+      <entry key="H4" value="2189.558374587456" />
+      <entry key="D1" value="8447.781023251655" />
+      <entry key="W1" value="11352.764812063198" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
-      <entry key="S2" value="0.0" />
-      <entry key="S5" value="0.0" />
-      <entry key="S10" value="0.0" />
-      <entry key="S30" value="2.976568176122471E-175" />
-      <entry key="S60" value="5.455793412623279E-88" />
-      <entry key="M2" value="2.335763989067092E-44" />
-      <entry key="M5" value="3.526725601300218E-18" />
-      <entry key="M10" value="1.879415504947183E-9" />
-      <entry key="M15" value="1.5427296025881971E-6" />
-      <entry key="M30" value="0.001605698611524143" />
-      <entry key="H1" value="0.10439337062108242" />
-      <entry key="H2" value="1.5035219440025056" />
-      <entry key="H4" value="7.220935258282311" />
-      <entry key="D1" value="30.359674069715552" />
-      <entry key="W1" value="39.26730688290772" />
+      <entry key="S2" value="5.028526307489674E-165" />
+      <entry key="S5" value="1.9079908629921696E-66" />
+      <entry key="S10" value="1.3813004245975132E-33" />
+      <entry key="S30" value="1.1138484071485044E-11" />
+      <entry key="S60" value="3.416555756276318E-6" />
+      <entry key="M2" value="0.002405082644048253" />
+      <entry key="M5" value="0.21758738464660454" />
+      <entry key="M10" value="1.217041688602885" />
+      <entry key="M15" value="2.2522675595589905" />
+      <entry key="M30" value="4.426143873964676" />
+      <entry key="H1" value="6.634006648047587" />
+      <entry key="H2" value="8.845380169546612" />
+      <entry key="H4" value="13.530089387081354" />
+      <entry key="D1" value="38.21608165261574" />
+      <entry key="W1" value="49.67382136092453" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.4325141225641238" />
-      <entry key="MS500" value="3.4563028126331683" />
-      <entry key="S2" value="11.322233989536143" />
-      <entry key="S5" value="24.98403724502494" />
-      <entry key="S10" value="42.01169140775403" />
-      <entry key="S30" value="82.08729752800899" />
-      <entry key="S60" value="106.53967334953377" />
-      <entry key="M2" value="126.11747647030835" />
-      <entry key="M5" value="159.9433426496937" />
-      <entry key="M10" value="201.6318831916867" />
-      <entry key="M15" value="230.1158565504737" />
-      <entry key="M30" value="303.07866986271955" />
-      <entry key="H1" value="604.3030660218949" />
-      <entry key="H2" value="1494.2740987898385" />
-      <entry key="H4" value="3199.1833007778478" />
-      <entry key="D1" value="8762.174758993668" />
-      <entry key="W1" value="10979.640954532597" />
+      <entry key="MS100" value="0.9993362595363626" />
+      <entry key="MS500" value="1.7373251039483975" />
+      <entry key="S2" value="3.8599933626974603" />
+      <entry key="S5" value="5.370396899136184" />
+      <entry key="S10" value="6.103570680907795" />
+      <entry key="S30" value="6.680745590409973" />
+      <entry key="S60" value="6.851241919937384" />
+      <entry key="M2" value="7.711194075969602" />
+      <entry key="M5" value="19.6373252747781" />
+      <entry key="M10" value="47.15156655072397" />
+      <entry key="M15" value="70.75945119647206" />
+      <entry key="M30" value="132.56764200033643" />
+      <entry key="H1" value="284.97163574183924" />
+      <entry key="H2" value="799.4431047072345" />
+      <entry key="H4" value="2203.0794818987943" />
+      <entry key="D1" value="8485.992237957229" />
+      <entry key="W1" value="11402.437707163766" />
     </decayedShown>
   </component>
   <component name="ProjectApplicationVersion">
@@ -156,6 +166,7 @@
   &quot;keyToString&quot;: {
     &quot;CMake Application.NexDB.executor&quot;: &quot;Run&quot;,
     &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
+    &quot;CidrDebugProfileConversion262&quot;: &quot;true&quot;,
     &quot;Google Test.tests.executor&quot;: &quot;Run&quot;,
     &quot;KEY_CHAT_IN_TOOLWINDOW&quot;: &quot;false&quot;,
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
@@ -185,7 +196,7 @@
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
     &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
     &quot;python.packages.toolwindow.project.migrated.to.right.top.v2&quot;: &quot;true&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMConfigurable&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.intellij.air.settings&quot;,
     &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
@@ -198,11 +209,6 @@
       </method>
     </configuration>
     <configuration name="NexDB" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="NexDB" TARGET_NAME="NexDB" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="NexDB" RUN_TARGET_NAME="NexDB">
-      <method v="2">
-        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-      </method>
-    </configuration>
-    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
@@ -249,25 +255,25 @@
       <item itemvalue="Google Test.tests" />
     </list>
   </component>
-  <component name="SelectedDebugProfileService">{
-  &quot;profileIdByStamp&quot;: [
+  <component name="SelectedDebugProfileService"><![CDATA[{
+  "profileIdByStamp": [
     {
-      &quot;first&quot;: {
-        &quot;##RUN_CONFIGURATION##&quot;: &quot;CMake Application.NexDB&quot;,
-        &quot;cmake&quot;: &quot;CMakeBuildProfile:Debug&quot;
+      "first": {
+        "##RUN_CONFIGURATION##": "CMake Application.NexDB",
+        "cmake": null
       },
-      &quot;second&quot;: &quot;61cf5273-1ce1-4188-ad73-94623220e73d&quot;
+      "second": "05136d03-711b-4210-864e-f05bbe63624e"
     },
     {
-      &quot;first&quot;: {
-        &quot;##RUN_CONFIGURATION##&quot;: &quot;Google Test.tests&quot;,
-        &quot;cmake&quot;: &quot;CMakeBuildProfile:Debug&quot;
+      "first": {
+        "##RUN_CONFIGURATION##": "CMake Application.NexDB",
+        "cmake": "CMakeBuildProfile:Debug"
       },
-      &quot;second&quot;: &quot;61cf5273-1ce1-4188-ad73-94623220e73d&quot;
+      "second": "05136d03-711b-4210-864e-f05bbe63624e"
     }
   ],
-  &quot;modificationCount&quot;: 8
-}</component>
+  "modificationCount": 19
+}]]></component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
       <changelist id="1a0129cb-ae6e-4fd4-8ac8-32f8a7cadcb5" name="Changes" comment="" />
@@ -322,7 +328,10 @@
       <workItem from="1792004487223" duration="2449000" />
       <workItem from="1792077694233" duration="382000" />
       <workItem from="1792082462015" duration="1296000" />
-      <workItem from="1792151691122" duration="5311000" />
+      <workItem from="1792151691122" duration="6893000" />
+      <workItem from="1792412333644" duration="1051000" />
+      <workItem from="1794764896258" duration="12000" />
+      <workItem from="1795179895483" duration="1193000" />
     </task>
     <servers />
   </component>

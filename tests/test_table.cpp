@@ -293,9 +293,9 @@ TEST_F(TableTest, EmptyStringInLastColumnRoundTrips) {
 }
 
 // Test 15: insertRow rejects a key that is already indexed and writes nothing, while the
-// rewrite path (enforceUnique = false) keeps duplicates so clear + reinsert loses no row
+// rewrite path (validate = false) keeps duplicates so clear + reinsert loses no row
 TEST_F(TableTest, DuplicateKeyIsRejectedUnlessUniquenessIsOff) {
-    std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
+    std::vector<Columns> schema = {{"id", "INT", true}, {"name", "STRING"}};
     Table table = makeTable("test_dup", schema);
 
     ASSERT_TRUE(table.insertRow({{"1", "Alice"}}).has_value());
@@ -320,11 +320,167 @@ TEST_F(TableTest, DuplicateKeyIsRejectedUnlessUniquenessIsOff) {
 // Test 16: a key that passes the digit check but overflows int is rejected before the
 // page write. It used to be stored anyway, while the caller got INDEX_INSERTION_FAILED
 TEST_F(TableTest, OverflowingKeyIsNotStored) {
-    std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
+    std::vector<Columns> schema = {{"id", "INT", true}, {"name", "STRING"}};
     Table table = makeTable("test_overflow", schema);
 
     auto res = table.insertRow({{"99999999999", "Big"}});
     ASSERT_FALSE(res.has_value());
     EXPECT_EQ(res.error(), TableError::INDEX_INSERTION_FAILED);
     EXPECT_EQ(table.selectRow(nullptr).size(), 0u);
+}
+
+// Test 17: a value the type check now rejects survives the rewrite. FLOAT used to accept '.',
+// so a stored '.' would fail the stricter check and vanish on the first DELETE or UPDATE
+TEST_F(TableTest, LegacyValueSurvivesRewrite) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"price", "FLOAT"}};
+    Table table = makeTable("test_legacy_value", schema);
+
+    auto res = table.insertRow({{"1", "."}});
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), TableError::TYPE_VALIDATION_FAILED);
+
+    // A row stored before the check got stricter
+    ASSERT_TRUE(table.insertRow({{"1", "."}}, false).has_value());
+    ASSERT_TRUE(table.insertRow({{"2", "1.5"}}).has_value());
+
+    Condition byId = {"id", "2", "="};
+    EXPECT_EQ(table.deleteRow(&byId), 1u);
+
+    auto rows = table.selectRow(nullptr);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "1");
+    EXPECT_EQ(rows[0].values[1], ".");
+}
+
+// Test 18: UNIQUE on a STRING column. The key is not involved: the second column is checked by a
+// scan, and findDuplicate says which column repeated. Text compares by bytes, so case matters
+TEST_F(TableTest, UniqueStringColumnRejectsDuplicate) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"email", "STRING", true}};
+    Table table = makeTable("test_uq_str", schema);
+
+    ASSERT_TRUE(table.insertRow({{"1", "a@x"}}).has_value());
+
+    Row dup = {{"2", "a@x"}};
+    auto res = table.insertRow(dup);
+    ASSERT_FALSE(res.has_value());
+    EXPECT_EQ(res.error(), TableError::DUPLICATE_KEY);
+    EXPECT_EQ(table.findDuplicate(dup), std::optional<size_t>(1));
+
+    EXPECT_TRUE(table.insertRow({{"3", "A@x"}}).has_value());
+    EXPECT_EQ(table.selectRow(nullptr).size(), 2u);
+}
+
+// Test 19: NULL is never a duplicate, in a scanned column or in the key
+TEST_F(TableTest, NullIsNotADuplicateInUniqueColumns) {
+    std::vector<Columns> schema = {{"id", "INT", true}, {"email", "STRING", true}};
+    Table table = makeTable("test_uq_null", schema);
+
+    EXPECT_TRUE(table.insertRow({{std::nullopt, std::nullopt}}).has_value());
+    EXPECT_TRUE(table.insertRow({{std::nullopt, std::nullopt}}).has_value());
+    EXPECT_TRUE(table.insertRow({{"1", std::nullopt}}).has_value());
+    EXPECT_TRUE(table.insertRow({{"2", std::nullopt}}).has_value());
+    // A NULL next to stored values: it matches none of them, and none of them blocks it
+    EXPECT_TRUE(table.insertRow({{"3", "a"}}).has_value());
+    EXPECT_TRUE(table.insertRow({{std::nullopt, "b"}}).has_value());
+    EXPECT_TRUE(table.insertRow({{"4", std::nullopt}}).has_value());
+    EXPECT_FALSE(table.findDuplicate({{std::nullopt, std::nullopt}}).has_value());
+    EXPECT_EQ(table.selectRow(nullptr).size(), 7u);
+}
+
+// Test 20: two UNIQUE columns are both enforced, and the first conflicting one is reported
+TEST_F(TableTest, TwoUniqueColumnsAreBothEnforced) {
+    std::vector<Columns> schema = {{"id", "INT", true}, {"email", "STRING", true}};
+    Table table = makeTable("test_uq_two", schema);
+    ASSERT_TRUE(table.insertRow({{"1", "a"}}).has_value());
+
+    EXPECT_EQ(table.findDuplicate({{"1", "b"}}), std::optional<size_t>(0));
+    EXPECT_EQ(table.findDuplicate({{"2", "a"}}), std::optional<size_t>(1));
+    EXPECT_EQ(table.findDuplicate({{"1", "a"}}), std::optional<size_t>(0));
+    EXPECT_EQ(table.findDuplicate({{"2", "b"}}), std::nullopt);
+    EXPECT_EQ(table.checkRow({{"2", "a"}}).error(), TableError::DUPLICATE_KEY);
+}
+
+// Test 21: a table with no UNIQUE column has no key: duplicates are accepted
+TEST_F(TableTest, NoUniqueColumnMeansNoKey) {
+    std::vector<Columns> schema = {{"id", "INT"}, {"name", "STRING"}};
+    Table table = makeTable("test_no_key", schema);
+
+    EXPECT_EQ(table.keyColumn(), -1);
+    EXPECT_TRUE(table.insertRow({{"1", "a"}}).has_value());
+    EXPECT_TRUE(table.insertRow({{"1", "b"}}).has_value());
+    EXPECT_EQ(table.selectRow(nullptr).size(), 2u);
+    Condition byId = {"id", "1", "="};
+    EXPECT_EQ(table.selectRow(&byId).size(), 2u);
+}
+
+// Test 22: the key is the first UNIQUE INT column wherever it sits. WHERE = takes the index
+// path, any other operator still scans (and never sees a null condition)
+TEST_F(TableTest, KeyColumnNeedNotBeFirst) {
+    std::vector<Columns> schema = {{"name", "STRING"}, {"id", "INT", true}};
+    Table table = makeTable("test_key_pos", schema);
+    EXPECT_EQ(table.keyColumn(), 1);
+
+    ASSERT_TRUE(table.insertRow({{"a", "5"}}).has_value());
+    ASSERT_TRUE(table.insertRow({{"c", "9"}}).has_value());
+    EXPECT_EQ(table.insertRow({{"b", "5"}}).error(), TableError::DUPLICATE_KEY);
+    EXPECT_EQ(table.findDuplicate({{"b", "5"}}), std::optional<size_t>(1));
+
+    Condition eq = {"id", "5", "="};
+    auto found = table.selectRow(&eq);
+    ASSERT_EQ(found.size(), 1u);
+    EXPECT_EQ(found[0].values[0], "a");
+
+    Condition gt = {"id", "5", ">"};
+    auto greater = table.selectRow(&gt);
+    ASSERT_EQ(greater.size(), 1u);
+    EXPECT_EQ(greater[0].values[0], "c");
+    EXPECT_EQ(table.selectRow(nullptr).size(), 2u);
+}
+
+// Test 23: UNIQUE compares like WHERE = does: 1.0 is 1, true is 1, a second UNIQUE INT is
+// compared as a number (010 is 10)
+TEST_F(TableTest, UniqueComparesByColumnType) {
+    std::vector<Columns> schema = {{"id", "INT", true}, {"code", "INT", true},
+                                   {"x", "FLOAT", true}, {"b", "BOOL", true}};
+    Table table = makeTable("test_uq_types", schema);
+    ASSERT_TRUE(table.insertRow({{"1", "10", "1", "true"}}).has_value());
+
+    EXPECT_EQ(table.findDuplicate({{"2", "010", "2", "false"}}), std::optional<size_t>(1));
+    EXPECT_EQ(table.findDuplicate({{"2", "11", "1.0", "false"}}), std::optional<size_t>(2));
+    EXPECT_EQ(table.findDuplicate({{"2", "11", "2", "1"}}), std::optional<size_t>(3));
+    EXPECT_EQ(table.findDuplicate({{"2", "11", "2", "false"}}), std::nullopt);
+}
+
+// Test 24: the rewrite (validate = false) keeps rows that repeat a UNIQUE value, like it
+// keeps legacy duplicate keys
+TEST_F(TableTest, RewriteKeepsRowsThatRepeatAUniqueValue) {
+    std::vector<Columns> schema = {{"id", "INT", true}, {"email", "STRING", true}};
+    Table table = makeTable("test_uq_rewrite", schema);
+    ASSERT_TRUE(table.insertRow({{"1", "a"}}).has_value());
+    ASSERT_TRUE(table.insertRow({{"2", "a"}}, false).has_value());
+    ASSERT_TRUE(table.insertRow({{"3", "z"}}).has_value());
+
+    Condition byId = {"id", "3", "="};
+    EXPECT_EQ(table.deleteRow(&byId), 1u);
+    EXPECT_EQ(table.selectRow(nullptr).size(), 2u);
+}
+
+// Test 25: the AUTOINCREMENT counter is the highest value + 1, also after a reopen, and a
+// value given explicitly moves it
+TEST_F(TableTest, NextAutoValueIsHighestPlusOne) {
+    std::vector<Columns> schema = {{"id", "INT", true, true}, {"name", "STRING"}};
+    const int tableId = nextTableId;
+    Table table = makeTable("test_auto", schema);
+
+    EXPECT_EQ(table.autoColumn(), 0);
+    EXPECT_EQ(table.keyColumn(), 0);
+    EXPECT_EQ(table.nextAutoValue(), 1);
+
+    ASSERT_TRUE(table.insertRow({{"5", "a"}}).has_value());
+    EXPECT_EQ(table.nextAutoValue(), 6);
+    ASSERT_TRUE(table.insertRow({{"2", "b"}}).has_value());
+    EXPECT_EQ(table.nextAutoValue(), 6);
+
+    Table reopened("test_auto", schema, *storage, tableId);
+    EXPECT_EQ(reopened.nextAutoValue(), 6);
 }

@@ -136,9 +136,8 @@ C → S:  <one SQL statement>\n
 - **Exactly one statement per line.** There is no multi-statement support; a `\n` inside
   the query text would be read as a frame boundary and the tail parsed as a second query.
   Reject queries containing `\n` or `\r` client-side with a clear error.
-- A trailing `;` is harmless — the lexer silently discards characters it does not
-  recognize, and `;` is one of them. So is `"`, `-`, `@`, `#`, and anything else outside
-  the token alphabet. See §6.1, because this is a sharp edge.
+- A trailing `;` is harmless: the lexer ignores `;`. Any other character outside the token
+  alphabet (`"`, `@`, `#`, a lone `.`, a sign not touching its digit) is a parse error, see §6.1.
 - No query IDs, no cancellation, no timeouts on the server side. A slow query blocks the
   engine mutex for every other client.
 - Unbounded line length (`async_read_until` on an unbounded `streambuf`). Practically,
@@ -157,7 +156,7 @@ Every response is **exactly one line of JSON** terminated by `\n`. Four shapes, 
 
 | `type` | Emitted for | Payload |
 |---|---|---|
-| `ok` | INSERT, UPDATE, DELETE, CREATE TABLE, DROP TABLE | `affected` (INSERT/UPDATE/DELETE only) |
+| `ok` | INSERT, UPDATE, DELETE, CREATE TABLE, DROP TABLE | `affected` (INSERT/UPDATE/DELETE only), `insert_id` (INSERT into a table with an AUTOINCREMENT column only) |
 | `rows` | SELECT (including a SELECT matching nothing) | `columns`, `rows` |
 | `switch` | USE / USE DATABASE | `db` |
 | `error` | any failure | `message` |
@@ -165,6 +164,7 @@ Every response is **exactly one line of JSON** terminated by `\n`. Four shapes, 
 ```json
 {"type": "ok"}
 {"type": "ok", "affected": 2}
+{"type": "ok", "affected": 1, "insert_id": 7}
 {"type": "rows", "columns": ["id", "name"], "rows": [["1", "Alice"], ["2", "Bob"]]}
 {"type": "switch", "db": "myproject"}
 {"type": "error", "message": "Table users does not exist"}
@@ -181,6 +181,10 @@ Rules that matter when writing the parser:
   success (nothing matched), not an error. DDL (`CREATE TABLE`, `DROP TABLE`,
   `CREATE/DROP DATABASE`) answers a bare `{"type": "ok"}` with no `affected` field, so
   treat the field as optional.
+- **`insert_id` is the AUTOINCREMENT value an INSERT stored**, whether the server generated it
+  or the client gave it. It appears only when the table has an `AUTOINCREMENT` column, so treat
+  it as optional too; map it to the client's `lastrowid`. Adding the field did not change
+  `PROTOCOL_VERSION`.
 - **Column order matches value order** in every row, so `dict(zip(columns, row))` is
   always correct. For `SELECT *` the order is the schema's declaration order; for an
   explicit list it is the order the user asked for.
@@ -213,7 +217,7 @@ This is where most client bugs will come from. All four rules below are enforced
 | Type | Accepted values (exact) |
 |---|---|
 | `INT` | optional `+`/`-`, then one or more ASCII digits |
-| `FLOAT` | optional `+`/`-`, digits and at most one `.` — no exponent, `3` is valid |
+| `FLOAT` | optional `+`/`-`, digits and at most one `.` — no exponent, `3` is valid; at least one digit, so `.5` and `5.` are valid, `.` is not |
 | `BOOL` | one of `true`, `false`, `1`, `0`, `TRUE`, `FALSE` — nothing else |
 | `STRING` | anything, always accepted |
 
@@ -290,22 +294,24 @@ The encoding is internal — values round-trip, so a client never sees percent-e
   `'don''t'` stores `don't`. Double quotes are not string delimiters.
 - Numbers are digits with at most one `.`, optionally preceded by a sign **written directly
   against the first digit**: `-5` and `-2.5` keep their sign; `+5` is accepted and stored as
-  `5`. A sign separated by a space (`- 5`) is not part of the number (see below).
-- **Every other unrecognized character is silently dropped**, which can turn typos into
-  wrong data instead of errors:
+  `5`. A number may start with the dot (`.5`, `-.5`) and keeps it as written.
+- **Every other unrecognized character is a parse error**, `Parse error: Unrecognized character in
+  query`, and nothing is executed. They used to be dropped in silence, which turned typos into
+  wrong data:
 
-  | Input | Actually executed | Effect |
-  |---|---|---|
-  | `VALUES (1, - 5)` | `VALUES (1, 5)` | a sign with a space after it is discarded |
-  | `VALUES (1, "Alice")` | `VALUES (1, Alice)` | quotes vanish, works by accident |
-  | `SELECT * FROM t;` | `SELECT * FROM t` | harmless |
+  | Input | Result |
+  |---|---|
+  | `VALUES (1, - 5)` | error: a sign must touch its digit |
+  | `VALUES (1, "Alice")` | error: double quotes are not string delimiters |
+  | `SELECT * FROM t @` | error |
+  | `SELECT * FROM t;` | fine: `;` is ignored |
 
   A client that formats numbers itself never produces the first case: `str(-5)` is `-5`.
 
 ### 6.2 Grammar
 
 ```
-CREATE TABLE <table> (<col> <TYPE> [, <col> <TYPE>]*)
+CREATE TABLE <table> (<col> <TYPE> [UNIQUE] [AUTOINCREMENT] [, <col> <TYPE> ...]*)
 DROP TABLE <table>
 CREATE DATABASE <name>        -- parses, then refused for remote clients (§7.8)
 DROP DATABASE <name>          -- parses, then refused for remote clients (§7.8)
@@ -358,8 +364,8 @@ Without a column list, values are positional in schema order, as before.
 | Column type | `=` / `!=` | `<` `>` `<=` `>=` |
 |---|---|---|
 | `INT`, `FLOAT` | numeric | numeric |
-| `BOOL` | logical value: `true`, `TRUE` and `1` are equal | `std::stod` on the text, see below |
-| `STRING` | exact text | `std::stod` on the text, see below |
+| `BOOL` | logical value: `true`, `TRUE` and `1` are equal | logical order, `false < true` |
+| `STRING` | exact text | byte order, case-sensitive, see below |
 
 Consequences:
 
@@ -378,9 +384,10 @@ empty result: `Type validation failed (invalid value for column <col> of type <T
 `IS [NOT] NULL` and `= NULL` are never rejected. A quoted number is the same as an unquoted
 one (`id = '5'` finds `5`), since the server does not keep track of quotes.
 
-Ordering operators on `BOOL` and `STRING` still parse both sides with `std::stod`, so a value
-that is not a number never matches (`'10' < '9'` is false, `'abc' < 'b'` is false). Do not
-build on that: it is tracked as a bug in `milestones.md`.
+`STRING` ordering compares the raw bytes, with no language-aware collation: digits sort
+before uppercase, uppercase before lowercase (`'B' < 'a'`), and a number stored as text
+sorts as text (`'10' < '9'`). UTF-8 text sorts by code point, so `'ă'` comes after `'z'`.
+A client that needs numeric or alphabetical order has to sort the rows itself.
 
 ### 7.2 An unknown column is an error everywhere
 
@@ -388,26 +395,36 @@ A `WHERE` on a column that does not exist is an error for `SELECT`, `UPDATE` and
 (`Column X does not exist in table Y`), the same error the SELECT list, the `SET` list and
 the INSERT column list give. A typo is never mistaken for "no matching rows".
 
-### 7.3 The first column, if INT, is a unique key
+### 7.3 UNIQUE and AUTOINCREMENT columns
 
-If the first column of the table (position 0) is `INT`, it is a unique key indexed by a
-B+ tree, and `WHERE <firstcol> = <n>` takes the index path when `<n>` is an exact integer
-that fits an int (`5`, `5.0`, `007`). Any other number (`5.5`, `99999999999`) takes a full
-scan and gets the same numeric answer as every other column (§7.1), so which path ran is
-invisible to a client. Only position 0 counts:
-`(name STRING, id INT)` has no key, no index and no uniqueness check. An `INSERT` whose key already exists, or an
-`UPDATE` that would leave two rows with the same key, fails with
-`<Insert|Update> failed for table <name>: Duplicate key <n> for column <col>` and changes
-nothing. Keys compare as integers (`007` collides with `7`). `NULL` is not part of the
-key: any number of rows may have a `NULL` there, and `WHERE <firstcol> = NULL` matches none
-of them (§5.3).
+A column declared `UNIQUE` refuses a value another row already holds. An `INSERT` that repeats
+one, or an `UPDATE` that would leave two rows with the same value, fails with
+`<Insert|Update> failed for table <name>: Duplicate key <value> for column <col>` and changes
+nothing. Values compare the way `WHERE =` does (§7.1): `007` collides with `7`, `1.0` with `1`,
+`true` with `1`, and text byte for byte (`'a'` and `'A'` are different). `NULL` is never a
+duplicate: any number of rows may hold it, in as many `UNIQUE` columns as the table has.
+A table with no `UNIQUE` column has no key and accepts duplicate rows. Only a declaration makes a
+column unique; being the first column or being named `id` means nothing.
 
-An `UPDATE` that does not assign the key column never hits this error. A table written by
-an older server may already contain duplicate keys; those rows stay readable, but the
-equality query returns only one of them.
+The first `UNIQUE` column of type `INT` is the table's key and is indexed by a B+ tree, so
+`WHERE <key> = <n>` takes the index path when `<n>` is an exact integer that fits an int (`5`,
+`5.0`, `007`). Any other number (`5.5`, `99999999999`) takes a full scan and gets the same numeric
+answer as every other column, so which path ran is invisible to a client. Other `UNIQUE` columns
+are checked by a scan.
 
-This implicit key is a temporary rule; declared `UNIQUE` / `AUTOINCREMENT` columns are
-planned (see `milestones.md`, P1).
+`AUTOINCREMENT` is allowed on `INT` columns only, at most one per table, and implies `UNIQUE`
+(`CREATE TABLE` refuses anything else: `Column <col> cannot be AUTOINCREMENT: only INT columns can`,
+`Table <name> has more than one AUTOINCREMENT column`). An `INSERT` that leaves the column out, or
+gives it `NULL`, stores the highest value in the column + 1, or `1` in an empty table, and the
+answer carries it as `insert_id` (§4). A value given explicitly is stored if it is unique and
+moves the counter past it. The counter is the current maximum, not a stored sequence, so after
+deleting the row with the highest id that id is handed out again. `UPDATE ... SET <col> = NULL` on
+an `AUTOINCREMENT` column is an error (`Column <col> is AUTOINCREMENT and cannot be NULL`).
+The server generates the value before writing the log, so recovery replays the same id.
+
+An `UPDATE` that does not assign a `UNIQUE` column never hits the duplicate error.
+Databases are not migrated: a catalog written before these constraints existed has no flags, so
+its tables have no key. Recreate them.
 
 ### 7.4 UPDATE reports what it did
 
@@ -519,6 +536,7 @@ Empty column or value list
 Column count does not match value count
 Trailing comma
 Unexpected tokens after end of statement
+Unrecognized character in query
 Unexpected end of query
 ```
 
@@ -539,10 +557,12 @@ Insert failed for table <name>: Column count mismatch (expected N columns)
 Insert failed for table <name>: Type validation failed (invalid value for column type)
 Insert failed for table <name>: Page manager full (disk space or page limit reached)
 Insert failed for table <name>: Index insertion failed (B+Tree error)
-Insert failed for table <name>: Duplicate key <n> for column <col>
+Insert failed for table <name>: Duplicate key <value> for column <col>
 Update failed for table <name>: Type validation failed (invalid value for column <col> of type <TYPE>)
-Update failed for table <name>: Duplicate key <n> for column <col>
+Update failed for table <name>: Duplicate key <value> for column <col>
 Update failed for table <name>: Index insertion failed (B+Tree error)
+Update failed for table <name>: Column <col> is AUTOINCREMENT and cannot be NULL
+Insert failed for table <name>: AUTOINCREMENT column <col> reached its maximum value
 ```
 
 Four more exist in `Engine.cpp` but no client can ever observe them, because they are raised
@@ -615,7 +635,8 @@ Worth surfacing in the client's own docs, because they will surprise users:
 - [ ] Values always come back as strings, except SQL NULL which is JSON `null`
 - [ ] Booleans must be sent as `true`/`false`, never Python's `True`
 - [ ] `NULL` is distinct from `'NULL'`; use `IS NULL`, since `= NULL` matches nothing
-- [ ] A sign must touch the digit: `-5` works, `- 5` silently becomes `5`
+- [ ] A sign must touch the digit: `-5` works, `- 5` is a parse error
+- [ ] Only a declared `UNIQUE` column is unique; `insert_id` appears only for `AUTOINCREMENT` tables
 - [ ] The `INSERT` column list is honoured; omitted columns become NULL
 - [ ] `USE` affects every connected client
 - [ ] `CREATE DATABASE` / `DROP DATABASE` are refused by the server, not only by the client —

@@ -466,10 +466,10 @@ TEST_F(EngineTest, AffectedRowCounts) {
     EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(3));
 }
 
-//Test 28: the first INT column is a unique key. A second INSERT with the same id is
+//Test 28: a UNIQUE INT column is the key. A second INSERT with the same id is
 //rejected and the table keeps one row; the key compares as an int, so 007 collides with 7
 TEST_F(EngineTest, DuplicateKeyInsertIsRejected) {
-    engine->query("CREATE TABLE eng_dup (id INT, name STRING)");
+    engine->query("CREATE TABLE eng_dup (id INT UNIQUE, name STRING)");
     engine->query("INSERT INTO eng_dup VALUES (1, 'Alice')");
     engine->query("INSERT INTO eng_dup VALUES (7, 'Seven')");
 
@@ -493,7 +493,7 @@ TEST_F(EngineTest, DuplicateKeyInsertIsRejected) {
 
 //Test 29: NULL keys are not part of uniqueness, like SQL UNIQUE
 TEST_F(EngineTest, ManyNullKeysAreAllowed) {
-    engine->query("CREATE TABLE eng_dupnull (id INT, name STRING)");
+    engine->query("CREATE TABLE eng_dupnull (id INT UNIQUE, name STRING)");
     EXPECT_NO_THROW(engine->query("INSERT INTO eng_dupnull VALUES (NULL, 'a')"));
     EXPECT_NO_THROW(engine->query("INSERT INTO eng_dupnull VALUES (NULL, 'b')"));
     EXPECT_NO_THROW(engine->query("INSERT INTO eng_dupnull (name) VALUES ('c')"));
@@ -503,7 +503,7 @@ TEST_F(EngineTest, ManyNullKeysAreAllowed) {
 //Test 30: an UPDATE that would give two rows the same key is rejected before anything
 //is written, whether the key already exists or the SET hits several rows at once
 TEST_F(EngineTest, UpdateToExistingKeyIsRejected) {
-    engine->query("CREATE TABLE eng_dupupd (id INT, name STRING)");
+    engine->query("CREATE TABLE eng_dupupd (id INT UNIQUE, name STRING)");
     engine->query("INSERT INTO eng_dupupd VALUES (1, 'Alice')");
     engine->query("INSERT INTO eng_dupupd VALUES (2, 'Bob')");
 
@@ -530,7 +530,7 @@ TEST_F(EngineTest, UpdateToExistingKeyIsRejected) {
 //Test 31: UPDATEs that cannot create a duplicate still go through: setting a row's key
 //to its own value, moving it to a free key, and not touching the key at all
 TEST_F(EngineTest, UpdateWithoutKeyConflictSucceeds) {
-    engine->query("CREATE TABLE eng_dupok (id INT, name STRING)");
+    engine->query("CREATE TABLE eng_dupok (id INT UNIQUE, name STRING)");
     engine->query("INSERT INTO eng_dupok VALUES (1, 'Alice')");
     engine->query("INSERT INTO eng_dupok VALUES (2, 'Bob')");
 
@@ -702,4 +702,227 @@ TEST_F(EngineTest, CreateExistingDatabaseThrows) {
 
     EXPECT_NO_THROW(engine->query("DROP DATABASE eng_dupdb"));
     EXPECT_FALSE(std::filesystem::exists("databases/eng_dupdb.db"));
+}
+
+//Test 38: <, >, <= and >= follow the column type too. STRING went through stod, so
+//name < '9' missed '10' and name > 'abc' matched nothing; BOOL only ordered 1 and 0
+TEST_F(EngineTest, OrderingComparesByColumnType) {
+    engine->query("CREATE TABLE eng_order (id INT, name STRING, active BOOL)");
+    engine->query("INSERT INTO eng_order VALUES (1, 'Alice', true)");
+    engine->query("INSERT INTO eng_order VALUES (2, 'Bob', false)");
+    engine->query("INSERT INTO eng_order VALUES (3, '10', 1)");
+    engine->query("INSERT INTO eng_order VALUES (4, '9', 0)");
+    engine->query("INSERT INTO eng_order VALUES (5, 'b', TRUE)");
+
+    auto idsWhere = [&](const std::string &where) {
+        std::vector<std::string> ids;
+        for (const auto &row : engine->query("SELECT id FROM eng_order WHERE " + where))
+            ids.push_back(*row.values[0]);
+        return ids;
+    };
+    using Ids = std::vector<std::string>;
+
+    // Strings compare by bytes: digits < uppercase < lowercase
+    EXPECT_EQ(idsWhere("name < 'B'"), (Ids{"1", "3", "4"}));
+    EXPECT_EQ(idsWhere("name < '9'"), (Ids{"3"}));
+    EXPECT_EQ(idsWhere("name >= 'b'"), (Ids{"5"}));
+    EXPECT_EQ(idsWhere("name > 'abc'"), (Ids{"5"}));
+
+    // false < true, whatever the spelling
+    EXPECT_EQ(idsWhere("active > false"), (Ids{"1", "3", "5"}));
+    EXPECT_EQ(idsWhere("active <= 0"), (Ids{"2", "4"}));
+    EXPECT_EQ(idsWhere("active >= TRUE"), (Ids{"1", "3", "5"}));
+    EXPECT_EQ(idsWhere("active < false"), Ids{});
+}
+
+//Test 39: FLOAT needs at least one digit. '.' and '-.' used to be stored, and then matched
+//no comparison at all; .5 and 5. are still numbers
+TEST_F(EngineTest, FloatNeedsAtLeastOneDigit) {
+    engine->query("CREATE TABLE eng_float (id INT, price FLOAT)");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_float VALUES (1, '.5')"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_float VALUES (2, 5.)"));
+
+    for (const char *sql : {"INSERT INTO eng_float VALUES (3, '.')",
+                            "INSERT INTO eng_float VALUES (4, '-.')",
+                            "SELECT * FROM eng_float WHERE price = '.'",
+                            "UPDATE eng_float SET price = '.'"}) {
+        try {
+            engine->query(sql);
+            FAIL() << "Expected a type error for: " << sql;
+        } catch (const std::runtime_error &e) {
+            EXPECT_NE(std::string(e.what()).find("Type validation failed"), std::string::npos)
+                << sql << ": " << e.what();
+        }
+    }
+
+    auto rows = engine->query("SELECT * FROM eng_float");
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].values[1], ".5");
+    EXPECT_EQ(rows[1].values[1], "5.");
+}
+
+//Characters the lexer does not know used to be dropped in silence: "Dan" was stored as Dan,
+//.5 as 5 and "- 5" as 5. They are a parse error now, and a rejected query changes nothing
+TEST_F(EngineTest, UnknownCharactersAreRejected) {
+    engine->query("CREATE TABLE eng_unk (id INT, name STRING, price FLOAT)");
+
+    for (const char *sql : {"INSERT INTO eng_unk VALUES (1, \"Dan\", 1.5)",
+                            "INSERT INTO eng_unk VALUES (1, 'x', - 5)",
+                            "INSERT INTO eng_unk VALUES (1, 'x', .)",
+                            "INSERT INTO eng_unk VALUES (1, 'x', 1.5) @",
+                            "@ SELECT * FROM eng_unk"}) {
+        try {
+            engine->query(sql);
+            FAIL() << "Expected a parse error for: " << sql;
+        } catch (const std::runtime_error &e) {
+            EXPECT_NE(std::string(e.what()).find("Unrecognized character"), std::string::npos)
+                << sql << ": " << e.what();
+        }
+    }
+    EXPECT_TRUE(engine->query("SELECT * FROM eng_unk").empty());
+
+    //A leading dot is a number, stored as written, and a trailing ; is still fine
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_unk VALUES (2, 'y', .5);"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_unk VALUES (3, 'z', -.5)"));
+    auto rows = engine->query("SELECT * FROM eng_unk");
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].values[2], ".5");
+    EXPECT_EQ(rows[1].values[2], "-.5");
+}
+
+//Expects query to throw a runtime_error whose message contains `part`
+static void expectError(Engine &engine, const std::string &sql, const std::string &part)
+{
+    try {
+        engine.query(sql);
+        FAIL() << "Expected an error for: " << sql;
+    } catch (const std::runtime_error &e) {
+        EXPECT_NE(std::string(e.what()).find(part), std::string::npos) << sql << ": " << e.what();
+    }
+}
+
+//UNIQUE on a column that is not the key: INSERT checks it by scan, the error names the column
+//and the value, and a rejected row changes nothing
+TEST_F(EngineTest, UniqueStringColumnRejectsDuplicateInsert) {
+    engine->query("CREATE TABLE eng_uq (id INT, email STRING UNIQUE)");
+    engine->query("INSERT INTO eng_uq VALUES (1, 'a@x')");
+
+    expectError(*engine, "INSERT INTO eng_uq VALUES (2, 'a@x')",
+                "Insert failed for table eng_uq: Duplicate key a@x for column email");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_uq VALUES (1, 'A@x')"));  //id is not UNIQUE here
+    EXPECT_EQ(engine->query("SELECT * FROM eng_uq").size(), 2u);
+}
+
+//NULL repeats freely in a UNIQUE column, and a table with no UNIQUE column has no key at all
+TEST_F(EngineTest, UniqueAllowsNullsAndNoUniqueMeansNoKey) {
+    engine->query("CREATE TABLE eng_uqnull (id INT, email STRING UNIQUE)");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_uqnull VALUES (1, NULL)"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_uqnull (id) VALUES (2)"));
+    EXPECT_EQ(engine->query("SELECT * FROM eng_uqnull").size(), 2u);
+
+    engine->query("CREATE TABLE eng_nokey (id INT, name STRING)");
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_nokey VALUES (1, 'a')"));
+    EXPECT_NO_THROW(engine->query("INSERT INTO eng_nokey VALUES (1, 'b')"));
+    EXPECT_EQ(engine->query("SELECT * FROM eng_nokey WHERE id = 1").size(), 2u);
+}
+
+//UPDATE on a UNIQUE column that is not the key: a value another row holds, or one SET that
+//would give several rows the same value, is rejected and writes nothing; NULL is fine
+TEST_F(EngineTest, UpdateOfUniqueColumnIsChecked) {
+    engine->query("CREATE TABLE eng_uqupd (id INT UNIQUE, email STRING UNIQUE)");
+    engine->query("INSERT INTO eng_uqupd VALUES (1, 'a')");
+    engine->query("INSERT INTO eng_uqupd VALUES (2, 'b')");
+
+    expectError(*engine, "UPDATE eng_uqupd SET email = 'b' WHERE id = 1",
+                "Update failed for table eng_uqupd: Duplicate key b for column email");
+    expectError(*engine, "UPDATE eng_uqupd SET email = 'same'",
+                "Update failed for table eng_uqupd: Duplicate key same for column email");
+
+    auto rows = engine->query("SELECT * FROM eng_uqupd");
+    ASSERT_EQ(rows.size(), 2u);
+    EXPECT_EQ(rows[0].values[1], "a");
+    EXPECT_EQ(rows[1].values[1], "b");
+
+    EXPECT_NO_THROW(engine->query("UPDATE eng_uqupd SET email = 'a' WHERE id = 1"));   //its own value
+    EXPECT_NO_THROW(engine->query("UPDATE eng_uqupd SET email = NULL"));
+    EXPECT_EQ(engine->getLastAffected(), std::optional<size_t>(2));
+}
+
+//AUTOINCREMENT: an omitted or NULL id gets highest + 1, an explicit one is kept and moves the
+//counter, and getLastInsertId reports what was stored
+TEST_F(EngineTest, AutoIncrementGeneratesIds) {
+    engine->query("CREATE TABLE eng_auto (id INT AUTOINCREMENT, name STRING)");
+
+    engine->query("INSERT INTO eng_auto (name) VALUES ('a')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(1));
+    engine->query("INSERT INTO eng_auto VALUES (NULL, 'b')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(2));
+    engine->query("INSERT INTO eng_auto VALUES (10, 'c')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(10));
+    engine->query("INSERT INTO eng_auto (name) VALUES ('d')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(11));
+    engine->query("INSERT INTO eng_auto VALUES (5, 'e')");        //below the counter: kept, counter stays
+    engine->query("INSERT INTO eng_auto (name) VALUES ('f')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(12));
+
+    expectError(*engine, "INSERT INTO eng_auto VALUES (10, 'dup')", "Duplicate key 10 for column id");
+
+    auto rows = engine->query("SELECT * FROM eng_auto WHERE name = 'd'");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "11");
+
+    engine->query("SELECT * FROM eng_auto");
+    EXPECT_FALSE(engine->getLastInsertId().has_value());
+}
+
+//A table without AUTOINCREMENT reports no insert id, and an omitted id there stays NULL
+TEST_F(EngineTest, NoInsertIdWithoutAutoIncrement) {
+    engine->query("CREATE TABLE eng_plain (id INT UNIQUE, name STRING)");
+    engine->query("INSERT INTO eng_plain (name) VALUES ('a')");
+    EXPECT_FALSE(engine->getLastInsertId().has_value());
+    auto rows = engine->query("SELECT * FROM eng_plain");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_FALSE(rows[0].values[0].has_value());
+}
+
+//UPDATE of an AUTOINCREMENT column: NULL is refused, a taken value is a duplicate, a free one
+//is accepted and the counter follows it
+TEST_F(EngineTest, UpdateOfAutoIncrementColumn) {
+    engine->query("CREATE TABLE eng_autoupd (id INT AUTOINCREMENT, name STRING)");
+    engine->query("INSERT INTO eng_autoupd (name) VALUES ('a')");
+    engine->query("INSERT INTO eng_autoupd (name) VALUES ('b')");
+
+    expectError(*engine, "UPDATE eng_autoupd SET id = NULL WHERE name = 'a'",
+                "Column id is AUTOINCREMENT and cannot be NULL");
+    expectError(*engine, "UPDATE eng_autoupd SET id = 2 WHERE name = 'a'", "Duplicate key 2 for column id");
+
+    EXPECT_NO_THROW(engine->query("UPDATE eng_autoupd SET id = 50 WHERE name = 'a'"));
+    engine->query("INSERT INTO eng_autoupd (name) VALUES ('c')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(51));
+}
+
+//CREATE TABLE refuses AUTOINCREMENT on a non-INT column and a second counter, and creates nothing
+TEST_F(EngineTest, CreateTableValidatesAutoIncrement) {
+    expectError(*engine, "CREATE TABLE eng_badauto (name STRING AUTOINCREMENT)",
+                "Column name cannot be AUTOINCREMENT: only INT columns can");
+    expectError(*engine, "CREATE TABLE eng_badauto2 (a INT AUTOINCREMENT, b INT AUTOINCREMENT)",
+                "Table eng_badauto2 has more than one AUTOINCREMENT column");
+    EXPECT_FALSE(engine->getCatalog().tableExists("eng_badauto"));
+    EXPECT_FALSE(engine->getCatalog().tableExists("eng_badauto2"));
+}
+
+//The flags are stored in the catalog and the counter is rebuilt from the data: after a restart
+//the next id continues and the constraints still hold
+TEST_F(EngineTest, AutoIncrementAndUniqueSurviveRestart) {
+    engine->query("CREATE TABLE eng_restart (id INT AUTOINCREMENT, email STRING UNIQUE)");
+    engine->query("INSERT INTO eng_restart (email) VALUES ('a')");
+    engine->query("INSERT INTO eng_restart (email) VALUES ('b')");
+
+    delete engine;
+    engine = new Engine(128, dbFile, catFile, walFile);
+
+    engine->query("INSERT INTO eng_restart (email) VALUES ('c')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(3));
+    expectError(*engine, "INSERT INTO eng_restart (email) VALUES ('a')", "Duplicate key a for column email");
+    EXPECT_EQ(engine->query("SELECT * FROM eng_restart").size(), 3u);
 }

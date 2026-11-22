@@ -376,7 +376,7 @@ TEST_F(WALRecoveryTest, FirstStatementAfterStartupIsLogged) {
 TEST_F(WALRecoveryTest, RejectedInsertIsNotLogged) {
     {
         Engine engine(128, dbFile, catFile, walFile);
-        engine.query("CREATE TABLE wal_dup (id INT, name STRING)");
+        engine.query("CREATE TABLE wal_dup (id INT UNIQUE, name STRING)");
         engine.query("INSERT INTO wal_dup VALUES (1, 'Alice')");
         EXPECT_THROW(engine.query("INSERT INTO wal_dup VALUES (1, 'Bob')"), std::runtime_error);
     }
@@ -395,4 +395,23 @@ TEST_F(WALRecoveryTest, RejectedInsertIsNotLogged) {
     auto rows = engine.query("SELECT * FROM wal_dup");
     ASSERT_EQ(rows.size(), 1u);
     EXPECT_EQ(rows[0].values[1], "Alice");
+}
+
+// An INSERT that leaves the AUTOINCREMENT column out is logged with the id it was given, never
+// with NULL, so replaying the log assigns the same id and the counter cannot drift
+TEST_F(WALRecoveryTest, GeneratedAutoIncrementIdIsLogged) {
+    {
+        Engine engine(128, dbFile, catFile, walFile);
+        engine.query("CREATE TABLE wal_auto (id INT AUTOINCREMENT, name STRING)");
+        engine.query("INSERT INTO wal_auto (name) VALUES ('Alice')");
+    }
+
+    std::ifstream file(walFile);
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("INSERT|wal_auto|1|Alice"), std::string::npos) << content;
+
+    Engine engine(128, dbFile, catFile, walFile);
+    auto rows = engine.query("SELECT * FROM wal_auto");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "1");
 }

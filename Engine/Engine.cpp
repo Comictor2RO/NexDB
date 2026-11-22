@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <climits>
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
@@ -134,6 +135,19 @@ void Engine::executeCreate(const CreateStatement &stmt)
         names.push_back(c.name);
     requireUniqueNames(names);
 
+    // Checked here and not in the parser for the same reason: the message names the column.
+    // One counter per table keeps "the generated value" unambiguous.
+    int autoColumns = 0;
+    for (const auto &c : stmt.getColumns())
+    {
+        if (!c.auto_increment)
+            continue;
+        if (c.type != "INT")
+            throw std::runtime_error("Column " + c.name + " cannot be AUTOINCREMENT: only INT columns can");
+        if (++autoColumns > 1)
+            throw std::runtime_error("Table " + stmt.getTable() + " has more than one AUTOINCREMENT column");
+    }
+
     // createTable also refuses an empty column list, but the parser already rejects
     // that, so a false result here always means the name is taken.
     if (!catalog->createTable(stmt.getTable(), stmt.getColumns()))
@@ -150,8 +164,10 @@ void Engine::executeDrop(const DropStatement &stmt)
 }
 
 // "<op> failed for table T: ..." for a TableError; row supplies the key for DUPLICATE_KEY
+// dupCol is the UNIQUE column that repeats a value; only read for DUPLICATE_KEY
 static std::string tableErrorMessage(const std::string &op, const std::string &table, TableError error,
-                                     const std::vector<Columns> &scheme, const Row &row)
+                                     const std::vector<Columns> &scheme, const Row &row,
+                                     size_t dupCol = 0)
 {
     std::string errorMsg = op + " failed for table " + table + ": ";
     switch (error)
@@ -169,9 +185,18 @@ static std::string tableErrorMessage(const std::string &op, const std::string &t
             errorMsg += "Index insertion failed (B+Tree error)";
             break;
         case TableError::DUPLICATE_KEY:
-            errorMsg += "Duplicate key " + std::to_string(std::stoi(*row.values[0]))
-                + " for column " + scheme[0].name;
+        {
+            std::string shown = dupCol < row.values.size() ? row.values[dupCol].value_or("") : "";
+            // INT compares as a number, so show it as one: 007 collides with 7 and is reported as 7
+            if (dupCol < scheme.size() && scheme[dupCol].type == "INT")
+            {
+                try { shown = std::to_string(std::stoll(shown)); }
+                catch (...) {}
+            }
+            errorMsg += "Duplicate key " + shown + " for column "
+                + (dupCol < scheme.size() ? scheme[dupCol].name : "?");
             break;
+        }
         default:
             errorMsg += "Unknown error";
             break;
@@ -213,13 +238,31 @@ void Engine::executeInsert(const InsertStatement &stmt)
         row.values = std::move(ordered);
     }
 
+    // An AUTOINCREMENT column left out of the INSERT, or given NULL, gets the next value.
+    // Done before checkRow and before the WAL: the log then holds the concrete value, so
+    // replaying it assigns exactly the same id.
+    const int autoCol = table.autoColumn();
+    if (autoCol >= 0 && autoCol < static_cast<int>(row.values.size()) && !row.values[autoCol])
+    {
+        const long long next = table.nextAutoValue();
+        if (next > INT_MAX)
+            throw std::runtime_error("Insert failed for table " + stmt.getTable() + ": AUTOINCREMENT column "
+                + scheme[autoCol].name + " reached its maximum value");
+        row.values[autoCol] = std::to_string(next);
+    }
+
     // Reject before logging, so a failed INSERT leaves no uncommitted line in the WAL.
-    // Recovery skips the duplicate check: everything in the WAL was valid when written, and
-    // replaying a REPLACE block row by row must not drop legacy duplicates.
+    // Recovery skips the duplicate and type checks: everything in the WAL was valid when
+    // written, and replaying a REPLACE block row by row must not drop legacy duplicates or
+    // values a stricter check now rejects.
     if (!inRecovery)
     {
         if (auto ok = table.checkRow(row); !ok)
-            throw std::runtime_error(tableErrorMessage("Insert", stmt.getTable(), ok.error(), scheme, row));
+        {
+            const size_t dupCol = ok.error() == TableError::DUPLICATE_KEY
+                ? table.findDuplicate(row).value_or(0) : 0;
+            throw std::runtime_error(tableErrorMessage("Insert", stmt.getTable(), ok.error(), scheme, row, dupCol));
+        }
         wal->logInsert(stmt.getTable(), row.values);
     }
 
@@ -228,6 +271,11 @@ void Engine::executeInsert(const InsertStatement &stmt)
         throw std::runtime_error(tableErrorMessage("Insert", stmt.getTable(), result.error(), scheme, row));
 
     lastAffected = 1;
+    if (autoCol >= 0 && autoCol < static_cast<int>(row.values.size()) && row.values[autoCol])
+    {
+        try { lastInsertId = std::stoll(*row.values[autoCol]); }
+        catch (...) {}
+    }
 
     if (!inRecovery)
         wal->commit();
@@ -322,38 +370,46 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
     {
         std::vector<Row> newState = table.previewUpdate(stmt.getCondition(), stmt.getAssignments());
 
-        // Only an assignment to the key column can create a duplicate. SET values are
-        // literals, so every matched row gets the same key: a conflict means two rows end
+        // Only an assignment to a UNIQUE column can create a duplicate. SET values are
+        // literals, so every matched row gets the same value: a conflict means two rows end
         // up with it. Checked before the WAL and before updateRow's clear + reinsert.
         for (const auto &a : stmt.getAssignments())
         {
-            if (scheme.empty() || scheme[0].type != "INT" || a.first != scheme[0].name || !a.second)
+            const int col = findColumn(scheme, a.first); // validated above
+            const Columns &column = scheme[col];
+            if (!column.unique)
                 continue;
+
+            if (!a.second)
+            {
+                // NULL is never a duplicate, but an AUTOINCREMENT column must always hold a value
+                if (column.auto_increment)
+                    throw std::runtime_error("Update failed for table " + stmt.getTable() + ": Column "
+                        + column.name + " is AUTOINCREMENT and cannot be NULL");
+                continue;
+            }
 
             Row probe;
             probe.values.assign(scheme.size(), std::nullopt);
-            probe.values[0] = a.second;
-            int key;
-            try { key = *table.keyOf(probe); }
-            catch (...)
+            probe.values[col] = a.second;
+            if (col == table.keyColumn())
             {
-                throw std::runtime_error(tableErrorMessage("Update", stmt.getTable(),
-                    TableError::INDEX_INSERTION_FAILED, scheme, probe));
+                // Passes the digit check but overflows int: it could not be indexed
+                try { table.keyOf(probe); }
+                catch (...)
+                {
+                    throw std::runtime_error(tableErrorMessage("Update", stmt.getTable(),
+                        TableError::INDEX_INSERTION_FAILED, scheme, probe));
+                }
             }
 
             size_t holders = 0;
             for (const auto &row : newState)
-            {
-                try
-                {
-                    if (table.keyOf(row) == key)
-                        holders++;
-                }
-                catch (...) {} // legacy key that overflows int: equals nothing
-            }
+                if (row.values[col] && Table::valuesEqual(column.type, *row.values[col], *a.second))
+                    holders++;
             if (holders > 1)
                 throw std::runtime_error(tableErrorMessage("Update", stmt.getTable(),
-                    TableError::DUPLICATE_KEY, scheme, probe));
+                    TableError::DUPLICATE_KEY, scheme, probe, static_cast<size_t>(col)));
         }
 
         if (!newState.empty())
@@ -383,6 +439,10 @@ const std::vector<std::string> &Engine::getLastColumns() const {
 
 std::optional<size_t> Engine::getLastAffected() const {
     return lastAffected;
+}
+
+std::optional<long long> Engine::getLastInsertId() const {
+    return lastInsertId;
 }
 
 void Engine::executeCreateDatabase(const CreateDatabaseStatement &stmt)
@@ -447,6 +507,7 @@ std::vector<Row> Engine::query(const std::string &sql, bool allowDatabaseAdmin)
     std::vector<Row> results;
     lastColumns.clear();
     lastAffected.reset();
+    lastInsertId.reset();
 
     if (!stmt)
         throw std::runtime_error("Invalid SQL query");

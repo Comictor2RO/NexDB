@@ -24,12 +24,14 @@ class Table {
         Table(const std::string &name, const std::vector<Columns> &scheme,
               StorageFile &storage, int tableId, int cacheCapacity = 128);
 
-        // Validates row without writing anything: column count, types, and that the key
-        // (column 0, if it is INT) parses and is not already in the index
+        // Validates row without writing anything: column count, types, that the key (if any)
+        // fits an int, and that no UNIQUE column repeats a value already in the table
         std::expected<void, TableError> checkRow(const Row &row);
-        // enforceUnique = false skips the duplicate check: the clear + reinsert rewrite in
-        // deleteRow/updateRow must keep every row it had, including legacy duplicates
-        std::expected<void, TableError> insertRow(const Row &row, bool enforceUnique = true);
+        // validate = false checks only the column count. The clear + reinsert rewrite in
+        // deleteRow/updateRow and the WAL replay pass rows that were valid when written, and
+        // must keep every one: legacy duplicates, and values a stricter type check now
+        // rejects (a FLOAT stored as '.')
+        std::expected<void, TableError> insertRow(const Row &row, bool validate = true);
         std::vector<Row> selectRow(Condition *cond);
         // Both return how many rows were deleted / matched the condition
         size_t deleteRow(Condition *cond);
@@ -46,22 +48,47 @@ class Table {
         // True if value is acceptable for a column of this type (NULL always is)
         bool validateValueForType(const Value &value, const std::string &type) const;
 
-        // The row's key as the index sees it, or nullopt if the table has no key (column 0
-        // is not INT; an INT further right never is a key) or the value is NULL. Throws if the value does not fit an int.
+        // The row's key as the index sees it, or nullopt if the table has no key or the value
+        // is NULL. The key is the first column that is both INT and UNIQUE; it is the only
+        // column the B+ tree indexes. Throws if the value does not fit an int.
         std::optional<int> keyOf(const Row &row) const;
+
+        // Position of the key column, or -1 if the table has none
+        int keyColumn() const { return keyCol; }
+
+        // Position of the first UNIQUE column in which row repeats a value already stored, or
+        // nullopt. NULL never repeats. The key column is looked up in the index, every other
+        // UNIQUE column by a scan, comparing like WHERE = does (1.0 = 1, true = 1, text by bytes)
+        std::optional<size_t> findDuplicate(const Row &row);
+
+        // The = of WHERE for two non-NULL values of a column type
+        static bool valuesEqual(const std::string &type, const std::string &a, const std::string &b);
+
+        // Position of the AUTOINCREMENT column, or -1 if the table has none
+        int autoColumn() const { return autoCol; }
+
+        // The value an omitted AUTOINCREMENT would get: the highest value in the column + 1,
+        // or 1 for an empty table. A deleted highest value is therefore handed out again.
+        long long nextAutoValue() const { return maxAuto + 1; }
 
     private:
         std::string name;
         std::vector<Columns> scheme;
+        int keyCol = -1;
+        int autoCol = -1;
+        long long maxAuto = 0;
         PageManager pageManager;
         BPlusTree index;
         int nextKey = 0;
 
         int getColumnIndex(const std::string &columnName) const;
         bool validateRowAgainstSchema(const Row &row) const;
+        std::expected<void, TableError> checkColumnCount(const Row &row) const;
+        // Column count, then the type of each value
         std::expected<void, TableError> checkShape(const Row &row) const;
 
         void rebuildIndex();
+        void trackAutoValue(const Row &row);
 };
 
 static bool evaluateCondition(const Condition *cond, const Row &row, const std::vector<Columns> &schema);

@@ -91,6 +91,14 @@ void Catalog::load()
                 Columns c;
                 c.name = pair[0];
                 c.type = pair[1];
+                for (size_t i = 2; i < pair.size(); i++) {
+                    if (pair[i] == "unique")
+                        c.unique = true;
+                    else if (pair[i] == "auto_increment") {
+                        c.unique = true;
+                        c.auto_increment = true;
+                    }
+                }
                 cols.push_back(c);
             }
         }
@@ -120,7 +128,15 @@ void Catalog::save()
         int tid = (idIt != tableIds.end()) ? idIt->second : 0;
         f << p.first << "|" << tid;
         for (size_t i = 0; i < p.second.size(); ++i)
-            f << "|" << p.second[i].name << " " << p.second[i].type;
+        {
+            const Columns &c = p.second[i];
+            f << "|" << c.name << " " << c.type;
+            // auto_increment implies unique, so one flag word is enough
+            if (c.auto_increment)
+                f << " auto_increment";
+            else if (c.unique)
+                f << " unique";
+        }
         f << "\n";
     }
 }

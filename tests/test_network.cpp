@@ -108,7 +108,7 @@ protected:
     void SetUp() override {
         cleanup();
         engine = new Engine(128, "test_network.db", "test_network.cat", "test_network.wal");
-        engine->query("CREATE TABLE net_users (id INT, name STRING)");
+        engine->query("CREATE TABLE net_users (id INT UNIQUE, name STRING)");
         engine->query("INSERT INTO net_users VALUES (1, Alice)");
         engine->query("INSERT INTO net_users VALUES (2, Bob)");
 
@@ -763,4 +763,16 @@ TEST_F(NetworkServerTest, DuplicateKeyInsertReturnsError) {
     std::string rows = sendQuery("SELECT * FROM net_users WHERE id = 1");
     EXPECT_NE(rows.find("Alice"), std::string::npos) << rows;
     EXPECT_EQ(rows.find("Mallory"), std::string::npos) << rows;
+}
+
+// An INSERT into a table with an AUTOINCREMENT column reports the id on the wire; any other
+// INSERT keeps the plain answer
+TEST_F(NetworkServerTest, InsertIntoAutoIncrementReportsInsertId) {
+    EXPECT_EQ(sendQuery("CREATE TABLE net_auto (id INT AUTOINCREMENT, name STRING)"), "{\"type\": \"ok\"}\n");
+    EXPECT_EQ(sendQuery("INSERT INTO net_auto (name) VALUES ('x')"),
+              "{\"type\": \"ok\", \"affected\": 1, \"insert_id\": 1}\n");
+    EXPECT_EQ(sendQuery("INSERT INTO net_auto (name) VALUES ('y')"),
+              "{\"type\": \"ok\", \"affected\": 1, \"insert_id\": 2}\n");
+    EXPECT_EQ(sendQuery("UPDATE net_auto SET name = 'z' WHERE id = 1"), "{\"type\": \"ok\", \"affected\": 1}\n");
+    EXPECT_EQ(sendQuery("INSERT INTO net_users VALUES (50, 'Eve')"), "{\"type\": \"ok\", \"affected\": 1}\n");
 }

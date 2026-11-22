@@ -2,6 +2,13 @@
 #include <memory>
 #include <cctype>
 
+static std::string upperCase(std::string s)
+{
+    for (char &c : s)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return s;
+}
+
 // Maps a column type token to the name stored in the catalog, or "" if it is not a type.
 // TEXT and BOOLEAN are aliases: normalizing them here means the catalog, and every type
 // comparison downstream, only ever sees INT, STRING, FLOAT and BOOL.
@@ -12,9 +19,7 @@ static std::string canonicalColumnType(const Token &token)
     if (token.type != TokenType::KEYWORD && token.type != TokenType::IDENTIFIER)
         return "";
 
-    std::string upper = token.value;
-    for (char &c : upper)
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    const std::string upper = upperCase(token.value);
 
     if (token.type == TokenType::KEYWORD)
         return (upper == "INT" || upper == "STRING" || upper == "FLOAT" || upper == "BOOL") ? upper : "";
@@ -97,6 +102,16 @@ std::expected<std::unique_ptr<CreateStatement>, ParseError> Parser::parseCreate(
             return std::unexpected(ParseError::InvalidType);
         consumeToken();
 
+        while (currentToken().type == TokenType::IDENTIFIER) {
+            const std::string word = upperCase(currentToken().value);
+            if (word == "UNIQUE")
+                col.unique = true;
+            else if (word == "AUTOINCREMENT")
+                col.unique = col.auto_increment = true;
+            else
+                break;
+            consumeToken();
+        }
         columns.push_back(col);
 
         if (currentToken().value == ",") {
@@ -455,6 +470,12 @@ std::expected<std::unique_ptr<UseDatabaseStatement>, ParseError> Parser::parseUs
 
 std::expected<std::unique_ptr<Statement>, ParseError> Parser::parse()
 {
+    // The lexer keeps characters it does not recognize as UNKNOWN tokens; reject them up
+    // front so they are never mistaken for a different error further in
+    for (const Token &t : tokens)
+        if (t.type == TokenType::UNKNOWN)
+            return std::unexpected(ParseError::UnknownCharacter);
+
     Token token = currentToken();
 
     if (token.type != TokenType::KEYWORD)

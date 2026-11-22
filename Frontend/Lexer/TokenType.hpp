@@ -10,6 +10,7 @@ enum class TokenType{
     OPERATOR,
     PUNCTUATION,
     WILDCARD,
+    UNKNOWN,   //A character the lexer does not recognize; the parser rejects it
     DATABASE,
     USE,
     END_OF_FILE

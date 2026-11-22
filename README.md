@@ -144,6 +144,21 @@ Comparisons follow SQL rules: `WHERE price = NULL` matches nothing, and `price !
 match rows where `price` is NULL. Over the network, NULL is a bare JSON `null`; the string
 `'NULL'` stays `"NULL"`.
 
+### `UNIQUE` and `AUTOINCREMENT`
+A column can now be declared `UNIQUE`, and an `INT` column `AUTOINCREMENT`:
+`CREATE TABLE accounts (id INT AUTOINCREMENT, email STRING UNIQUE, name STRING)`. A table has a
+key only if one of its columns says so: **the first `UNIQUE INT` column is the key** and is indexed;
+before, column 0 was a key whenever it was `INT`, with no way to turn that off. Leave an
+`AUTOINCREMENT` column out of an `INSERT` (or give it `NULL`) and it gets the highest value + 1; the
+network answer then carries it as `"insert_id"`. See *Names* under *Supported SQL* for the exact rules.
+**Existing databases are not migrated**: a `.cat` file written by an older version has no flags, so
+its tables have no key. Create the tables again (or delete the old `.db`, `.cat` and `.wal` files).
+
+### Unrecognized characters are an error
+A character the lexer does not know (`"`, `@`, a lone `.`, a sign separated from its digit) used to be
+thrown away, so `VALUES (1, "Dan")` stored `Dan` and `- 5` stored `5`. It is now
+`Parse error: Unrecognized character in query`. `;` is still ignored, and `.5` / `-.5` are numbers.
+
 ### Negative numbers
 A sign written directly against a digit is part of the number: `VALUES (1, -5)` stores `-5`
 and `WHERE price > -0.5` compares against `-0.5`. Before, the `-` was silently dropped. `+5`
@@ -360,7 +375,7 @@ SELECT * FROM users WHERE age > 18\n
 | Case | Response |
 |------|----------|
 | Success, no rows (DDL: CREATE/DROP) | `{"type": "ok"}` |
-| Success, INSERT / UPDATE / DELETE | `{"type": "ok", "affected": <rows touched>}` |
+| Success, INSERT / UPDATE / DELETE | `{"type": "ok", "affected": <rows touched>}` (an INSERT into a table with an `AUTOINCREMENT` column adds `"insert_id": <id>`) |
 | Success, with rows | `{"type": "rows", "columns": ["id", "name"], "rows": [["1", "Alice"], ["2", null]]}` |
 | Database switch (`USE`) | `{"type": "switch", "db": "<dbname>"}` |
 | Error | `{"type": "error", "message": "<message>"}` |
@@ -550,6 +565,7 @@ DROP DATABASE oldproject      -- GUI only by default; deletes the files, cannot 
 -- Table management
 CREATE TABLE products (id INT, name STRING, price FLOAT, active BOOL)
 CREATE TABLE notes (id INT, body TEXT, done BOOLEAN)        -- TEXT / BOOLEAN are aliases
+CREATE TABLE accounts (id INT AUTOINCREMENT, email STRING UNIQUE, name STRING)
 DROP TABLE products
 
 -- Inserting
@@ -575,7 +591,8 @@ DELETE FROM products                                         -- every row
 
 **Types:** `INT`, `STRING`, `FLOAT`, `BOOL`. `TEXT` and `BOOLEAN` are accepted as aliases in
 `CREATE TABLE` and stored as `STRING` / `BOOL`. `BOOL` accepts `true`, `false`, `TRUE`, `FALSE`,
-`1`, `0`. `FLOAT` has no exponent notation (`1e5` is a parse error).
+`1`, `0`. `FLOAT` has no exponent notation (`1e5` is a parse error) and needs at least one digit:
+`'.5'` and `5.` are valid, `'.'` is not.
 
 **Values:** numbers (`42`, `9.5`, `-5`; the sign must touch the digit), strings in single
 quotes (`'Alice'`, `''` for empty, `''` inside a string for a literal `'`), and `NULL`
@@ -587,8 +604,9 @@ quotes for anything with spaces or punctuation.
 
 **WHERE:** exactly one condition — `=`, `!=`, `<`, `>`, `<=`, `>=`, `IS NULL`, `IS NOT NULL`.
 Comparisons follow the column type: on `INT` / `FLOAT` every operator is numeric (`9.50` equals
-`9.5`, `007` equals `7`); on `BOOL`, `=` / `!=` compare the logical value (`TRUE`, `true` and `1`
-are the same); on `STRING`, `=` / `!=` compare the text. A literal the column can never hold
+`9.5`, `007` equals `7`); on `BOOL` every operator compares the logical value (`TRUE`, `true` and
+`1` are the same, and `false < true`); on `STRING` every operator compares the text byte by byte,
+so case matters (`'B' < 'a'`) and `'10' < '9'`. A literal the column can never hold
 (`age = 'abc'`, `active = 'yes'`) is an error, not an empty result; any number is fine for an
 `INT` column (`age > 2.5`). No `AND` / `OR`, `ORDER BY`, `LIMIT` or `JOIN` yet.
 
@@ -599,11 +617,21 @@ list), a value of the wrong type, a wrong value count and every parse error retu
 readable message.
 
 **Names:** keywords are case-insensitive; table and column names are case-sensitive
-(`Users` ≠ `users`) and start with a letter or `_`. `NULL`, `IS` and `NOT` are reserved. If the first column of a table is
-`INT`, it is a unique key, indexed by a B+ tree: an `INSERT` or `UPDATE` that would repeat an
-existing value is an error (`Duplicate key N for column id`). Keys compare as integers, so `007`
-and `7` collide; `NULL` is allowed any number of times. Only position 0 counts:
-`(name STRING, id INT)` has no key at all.
+(`Users` ≠ `users`) and start with a letter or `_`. `NULL`, `IS` and `NOT` are reserved.
+
+**Constraints:** after a column's type, `UNIQUE` and `AUTOINCREMENT` (any case, not reserved words)
+may follow. A `UNIQUE` column refuses a value another row already holds: an `INSERT` or `UPDATE` that
+would repeat one is an error (`Duplicate key <value> for column <col>`), and nothing is written.
+Values compare like `WHERE =` does: `007` and `7` collide, `1.0` and `1` collide, `true` and `1`
+collide, text compares byte for byte (`'a'` and `'A'` differ). `NULL` is allowed any number of times.
+A table with no `UNIQUE` column has no key and accepts duplicates.
+`AUTOINCREMENT` is only for `INT` columns, at most one per table, and implies `UNIQUE`. An `INSERT`
+that omits the column, or gives `NULL`, stores the highest value in the column + 1 (1 in an empty
+table); a value given explicitly is kept, must be unique, and moves the counter. The counter is the
+current maximum, so deleting the row with the highest id hands that id out again. `UPDATE ... SET
+id = NULL` on an `AUTOINCREMENT` column is an error.
+The first `UNIQUE INT` column is the table's key and is indexed by a B+ tree (`WHERE key = n` takes
+the index); other `UNIQUE` columns are checked by a scan.
 
 One statement per network query; in the GUI editor, `;` separates statements.
 
@@ -664,7 +692,7 @@ NexDB/
 │   ├── StorageFile/  Shared .db file manager — allocates/frees pages per tableId
 │   ├── PageManager/  Per-table read/write with thread-safe LRU cache
 │   └── LRUCache/     LRU eviction with dirty-page tracking
-├── Indexing/       B+ tree index on column 0, if INT
+├── Indexing/       B+ tree index on the first UNIQUE INT column
 ├── Catalog/        Table schema + tableId registry (persisted to .cat file)
 ├── WALManager/     Write-ahead log — fsync on commit for crash safety
 ├── Networking/     ASIO TCP server with challenge-response auth

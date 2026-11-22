@@ -406,7 +406,13 @@ std::string NetworkServer::executeQuery(std::string &query)
             // INSERT / UPDATE / DELETE report how many rows they touched; DDL stays a bare ok
             std::optional<size_t> affected = engine.getLastAffected();
             if (affected)
-                return "{\"type\": \"ok\", \"affected\": " + std::to_string(*affected) + "}\n";
+            {
+                std::string ok = "{\"type\": \"ok\", \"affected\": " + std::to_string(*affected);
+                // An INSERT into a table with an AUTOINCREMENT column also reports the id it stored
+                if (std::optional<long long> insertId = engine.getLastInsertId())
+                    ok += ", \"insert_id\": " + std::to_string(*insertId);
+                return ok + "}\n";
+            }
             return "{\"type\": \"ok\"}\n";
         }
 

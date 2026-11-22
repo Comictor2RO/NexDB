@@ -346,3 +346,88 @@ TEST(ParserTest, ColumnNameMayStartWithUnderscore) {
     EXPECT_EQ(cols[0].name, "_x");
     EXPECT_EQ(cols[0].type, "INT");
 }
+
+// Test 23: UNIQUE sets the flag on its own column only
+TEST(ParserTest, CreateColumnUnique) {
+    CreateStatement *create = nullptr;
+    auto stmt = parseOk("CREATE TABLE t (id INT UNIQUE, name STRING)", create);
+    ASSERT_NE(create, nullptr);
+
+    const auto &cols = create->getColumns();
+    ASSERT_EQ(cols.size(), 2u);
+    EXPECT_TRUE(cols[0].unique);
+    EXPECT_FALSE(cols[0].auto_increment);
+    EXPECT_FALSE(cols[1].unique);
+    EXPECT_FALSE(cols[1].auto_increment);
+}
+
+// Test 24: AUTOINCREMENT implies UNIQUE
+TEST(ParserTest, CreateColumnAutoIncrementImpliesUnique) {
+    CreateStatement *create = nullptr;
+    auto stmt = parseOk("CREATE TABLE t (id INT AUTOINCREMENT, name STRING)", create);
+    ASSERT_NE(create, nullptr);
+
+    const auto &cols = create->getColumns();
+    ASSERT_EQ(cols.size(), 2u);
+    EXPECT_TRUE(cols[0].unique);
+    EXPECT_TRUE(cols[0].auto_increment);
+    EXPECT_FALSE(cols[1].unique);
+}
+
+// Test 25: the constraint words are case-insensitive, like the rest of the language
+TEST(ParserTest, CreateConstraintsAreCaseInsensitive) {
+    CreateStatement *create = nullptr;
+    auto stmt = parseOk("create table t (a int unique, b int AutoIncrement, c int UNIQUE)", create);
+    ASSERT_NE(create, nullptr);
+
+    const auto &cols = create->getColumns();
+    ASSERT_EQ(cols.size(), 3u);
+    EXPECT_TRUE(cols[0].unique);
+    EXPECT_TRUE(cols[1].auto_increment);
+    EXPECT_TRUE(cols[2].unique);
+}
+
+// Test 26: both words on one column, in either order. A stale read of the previous
+// token used to make the second word count as the first
+TEST(ParserTest, CreateBothConstraintsInEitherOrder) {
+    for (const char *sql : {"CREATE TABLE t (id INT UNIQUE AUTOINCREMENT)",
+                            "CREATE TABLE t (id INT AUTOINCREMENT UNIQUE)"}) {
+        CreateStatement *create = nullptr;
+        auto stmt = parseOk(sql, create);
+        ASSERT_NE(create, nullptr) << sql;
+        const auto &cols = create->getColumns();
+        ASSERT_EQ(cols.size(), 1u) << sql;
+        EXPECT_TRUE(cols[0].unique) << sql;
+        EXPECT_TRUE(cols[0].auto_increment) << sql;
+    }
+}
+
+// Test 27: the words are not reserved, so they still work as column names
+TEST(ParserTest, ConstraintWordsAreStillValidColumnNames) {
+    CreateStatement *create = nullptr;
+    auto stmt = parseOk("CREATE TABLE t (unique INT UNIQUE, autoincrement STRING)", create);
+    ASSERT_NE(create, nullptr);
+
+    const auto &cols = create->getColumns();
+    ASSERT_EQ(cols.size(), 2u);
+    EXPECT_EQ(cols[0].name, "unique");
+    EXPECT_TRUE(cols[0].unique);
+    EXPECT_EQ(cols[1].name, "autoincrement");
+    EXPECT_FALSE(cols[1].unique);
+}
+
+// Test 28: any other word after the type is still an error, also right after a valid
+// constraint (that word must not be swallowed as one)
+TEST(ParserTest, CreateRejectsUnknownConstraint) {
+    for (const char *sql : {"CREATE TABLE t (id INT PRIMARY KEY)",
+                            "CREATE TABLE t (id INT UNIQUE foo)",
+                            "CREATE TABLE t (id INT AUTOINCREMENT UNIQUE foo, b INT)",
+                            "CREATE TABLE t (id INT UNIQUE name STRING)"}) {
+        Lexer lexer(sql);
+        auto tokens = lexer.tokenize();
+        Parser parser(tokens);
+        auto result = parser.parse();
+        ASSERT_FALSE(result.has_value()) << sql;
+        EXPECT_EQ(result.error(), ParseError::UnexpectedToken) << sql;
+    }
+}

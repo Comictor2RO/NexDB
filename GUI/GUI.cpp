@@ -1055,9 +1055,15 @@ void GUI::drawExplorer(Rectangle panel)
                 {
                     float cx = tx + 22;
                     DrawCircle((int)(cx + 4), (int)(y + rowH / 2), 2.5f, theme.textDim);
-                    float typeW = measure(regular, column.type, 14);
+                    // The type, plus a short tag for a constraint: AUTO already implies UNIQUE
+                    std::string typeLabel = column.type;
+                    if (column.auto_increment)
+                        typeLabel += " AUTO";
+                    else if (column.unique)
+                        typeLabel += " UNIQUE";
+                    float typeW = measure(regular, typeLabel, 14);
                     drawText(regular, fit(regular, column.name, 16, body.x + body.width - cx - typeW - 28), cx + 14, y + 4, 16, theme.text);
-                    drawText(regular, column.type, body.x + body.width - typeW - 8, y + 5, 14, theme.textDim);
+                    drawText(regular, typeLabel, body.x + body.width - typeW - 8, y + 5, 14, theme.textDim);
                 }
                 y += rowH;
             }

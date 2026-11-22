@@ -220,3 +220,53 @@ TEST_F(CatalogTest, ConcurrentWriteAndRead) {
 
     EXPECT_EQ(corruptReads.load(), 0);
 }
+
+// Test: the unique and auto_increment flags survive save + load, and a column without
+// flags stays without them
+TEST_F(CatalogTest, ConstraintFlagsRoundTrip) {
+    {
+        Catalog catalog(catFile);
+        Columns id;    id.name = "id";       id.type = "INT";    id.unique = true; id.auto_increment = true;
+        Columns email; email.name = "email"; email.type = "STRING"; email.unique = true;
+        Columns name;  name.name = "name";   name.type = "STRING";
+        ASSERT_TRUE(catalog.createTable("flagged", {id, email, name}));
+    }
+
+    Catalog reloaded(catFile);
+    auto cols = reloaded.getColumns("flagged");
+    ASSERT_EQ(cols.size(), 3u);
+
+    EXPECT_TRUE(cols[0].unique);
+    EXPECT_TRUE(cols[0].auto_increment);
+    EXPECT_TRUE(cols[1].unique);
+    EXPECT_FALSE(cols[1].auto_increment);
+    EXPECT_FALSE(cols[2].unique);
+    EXPECT_FALSE(cols[2].auto_increment);
+}
+
+// Test: auto_increment alone in the file also means unique, since it implies it
+TEST_F(CatalogTest, AutoIncrementWordImpliesUnique) {
+    {
+        std::ofstream f(catFile);
+        f << "t|1|id INT auto_increment|name STRING\n";
+    }
+    Catalog catalog(catFile);
+    auto cols = catalog.getColumns("t");
+    ASSERT_EQ(cols.size(), 2u);
+    EXPECT_TRUE(cols[0].unique);
+    EXPECT_TRUE(cols[0].auto_increment);
+    EXPECT_FALSE(cols[1].unique);
+}
+
+// Test: a catalog written before the flags existed loads with no unique columns
+TEST_F(CatalogTest, CatalogWithoutFlagsHasNoUniqueColumns) {
+    {
+        std::ofstream f(catFile);
+        f << "old|1|id INT|name STRING\n";
+    }
+    Catalog catalog(catFile);
+    auto cols = catalog.getColumns("old");
+    ASSERT_EQ(cols.size(), 2u);
+    EXPECT_FALSE(cols[0].unique);
+    EXPECT_FALSE(cols[0].auto_increment);
+}

@@ -136,15 +136,21 @@ std::vector<Token> Lexer::tokenize()
         {
             tokens.push_back(readWord());
         }
-        else if(isdigit(currentCharacter))
+        else if(isdigit(currentCharacter)
+            || (currentCharacter == '.' && position + 1 < input.length()
+                && isdigit(input[position + 1])))
         {
             tokens.push_back(readNumber());
         }
         //A sign directly followed by a digit is part of the number: -5 stays -5 instead
         //of the '-' being dropped as an unknown character. '+' is accepted and discarded,
         //so +5 is stored as 5 and still compares equal to it
+        //The same holds for a leading dot: .5 and -.5 are numbers, not 5 with the dot dropped
         else if((currentCharacter == '-' || currentCharacter == '+')
-            && position + 1 < input.length() && isdigit(input[position + 1]))
+            && position + 1 < input.length()
+            && (isdigit(input[position + 1])
+                || (input[position + 1] == '.' && position + 2 < input.length()
+                    && isdigit(input[position + 2]))))
         {
             position++;
             Token number = readNumber();
@@ -169,8 +175,16 @@ std::vector<Token> Lexer::tokenize()
         {
             tokens.push_back(readWildcard());
         }
+        //The statement terminator is accepted and ignored (a trailing ; is optional)
+        else if(currentCharacter == ';')
+        {
+            position++;
+        }
+        //Anything else is kept as an UNKNOWN token instead of being dropped, so the parser
+        //can reject the query: "Dan", @, a lone . or a sign not glued to its digit
         else
         {
+            tokens.push_back({TokenType::UNKNOWN, std::string(1, currentCharacter)});
             position++;
         }
     }

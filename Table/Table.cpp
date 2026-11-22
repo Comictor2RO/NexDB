@@ -16,6 +16,19 @@ static std::optional<bool> boolValue(const std::string &value)
     return std::nullopt;
 }
 
+// Applies op to two values of the same type; false for an unknown op
+template <typename T>
+static bool applyOperator(const std::string &op, const T &l, const T &r)
+{
+    if (op == "=")  return l == r;
+    if (op == "!=") return l != r;
+    if (op == ">")  return l > r;
+    if (op == "<")  return l < r;
+    if (op == ">=") return l >= r;
+    if (op == "<=") return l <= r;
+    return false;
+}
+
 int Table::getColumnIndex(const std::string &columnName) const
 {
     for (int i = 0; i < (int)scheme.size(); i++)
@@ -62,7 +75,7 @@ bool Table::validateValueForType(const Value &maybeValue, const std::string &typ
         if (start == static_cast<int>(value.size()))
             return false;
 
-        bool hasDot = false;
+        bool hasDot = false, hasDigit = false;
         for (int i = start; i < static_cast<int>(value.size()); i++)
         {
             if (value[i] == '.')
@@ -74,8 +87,12 @@ bool Table::validateValueForType(const Value &maybeValue, const std::string &typ
             else if (!std::isdigit((unsigned char) value[i])) {
                 return false;
             }
+            else {
+                hasDigit = true;
+            }
         }
-        return true;
+        // .5 and 5. are numbers; '.' and '-.' alone used to pass too
+        return hasDigit;
     }
 
     // Only the four canonical names reach here: the parser maps BOOLEAN / TEXT
@@ -99,6 +116,29 @@ bool Table::validateRowAgainstSchema(const Row &row) const
     }
 
     return true;
+}
+
+// Compares two non-NULL values under a column type. Every operator follows the column type.
+// For a number column = holds exactly when neither < nor > does, so 9.50 = 9.5 and 007 = 7.
+// STRING is ordered by bytes: case matters ('B' < 'a'), '10' < '9', and UTF-8 text sorts by
+// code point. WHERE and UNIQUE both go through here, so they can never disagree.
+static bool compareValues(const std::string &op, const std::string &type,
+                          const std::string &left, const std::string &right)
+{
+    if (type == "INT" || type == "FLOAT")
+    {
+        try { return applyOperator(op, std::stod(left), std::stod(right)); }
+        catch (...) { return false; }
+    }
+
+    // TRUE, true and 1 are the same BOOL value, and false < true
+    if (type == "BOOL")
+    {
+        std::optional<bool> l = boolValue(left), r = boolValue(right);
+        return l && r && applyOperator(op, *l, *r);
+    }
+
+    return applyOperator(op, left, right);
 }
 
 static bool evaluateCondition(const Condition *cond, const Row &row, const std::vector<Columns> &scheme)
@@ -129,65 +169,46 @@ static bool evaluateCondition(const Condition *cond, const Row &row, const std::
     if (!rowValue || !cond->value)
         return false;
 
-    const std::string &left = *rowValue;
-    const std::string &right = *cond->value;
-    const std::string &type = scheme[colIndex].type;
+    return compareValues(cond->op, scheme[colIndex].type, *rowValue, *cond->value);
+}
 
-    // = and != follow the column type, like < and > already did for numbers. For a number
-    // column = holds exactly when neither < nor > does, so 9.50 = 9.5 and 007 = 7
-    if (type == "INT" || type == "FLOAT")
-    {
-        try {
-            double l = std::stod(left), r = std::stod(right);
-            if (cond->op == "=")  return l == r;
-            if (cond->op == "!=") return l != r;
-            if (cond->op == ">")  return l > r;
-            if (cond->op == "<")  return l < r;
-            if (cond->op == ">=") return l >= r;
-            if (cond->op == "<=") return l <= r;
-        } catch (...) { return false; }
-        return false;
-    }
-
-    // TRUE, true and 1 are the same BOOL value
-    if (type == "BOOL" && (cond->op == "=" || cond->op == "!="))
-    {
-        std::optional<bool> l = boolValue(left), r = boolValue(right);
-        if (!l || !r)
-            return false;
-        return cond->op == "=" ? *l == *r : *l != *r;
-    }
-
-    if (cond->op == "=")  return left == right;
-    if (cond->op == "!=") return left != right;
-    try {
-        if (cond->op == ">")  return std::stod(left) > std::stod(right);
-        if (cond->op == "<")  return std::stod(left) < std::stod(right);
-        if (cond->op == ">=") return std::stod(left) >= std::stod(right);
-        if (cond->op == "<=") return std::stod(left) <= std::stod(right);
-    } catch (...) { return false; }
-    return false;
+bool Table::valuesEqual(const std::string &type, const std::string &a, const std::string &b)
+{
+    return compareValues("=", type, a, b);
 }
 
 Table::Table(const std::string &name, const std::vector<Columns> &schema,
              StorageFile &storage, int tableId, int cacheCapacity)
     : name(name), scheme(schema), pageManager(storage, tableId, cacheCapacity), index(4), nextKey(0)
 {
+    // The key is the first UNIQUE INT column; autoCol is the AUTOINCREMENT one (INT, at most one)
+    for (size_t i = 0; i < scheme.size(); i++) {
+        if (keyCol < 0 && scheme[i].type == "INT" && scheme[i].unique)
+            keyCol = static_cast<int>(i);
+        if (autoCol < 0 && scheme[i].auto_increment)
+            autoCol = static_cast<int>(i);
+    }
     rebuildIndex();
 }
 
 std::optional<int> Table::keyOf(const Row &row) const
 {
-    if (scheme.empty() || scheme[0].type != "INT" || row.values.empty() || !row.values[0])
+    if (keyCol < 0 || keyCol >= row.values.size() || !row.values[keyCol])
         return std::nullopt;
-    return std::stoi(*row.values[0]);
+    return std::stoi(*row.values[keyCol]);
+}
+
+std::expected<void, TableError> Table::checkColumnCount(const Row &row) const
+{
+    if (row.values.size() != scheme.size())
+        return std::unexpected(TableError::SCHEME_MISMATCH);
+    return {};
 }
 
 std::expected<void, TableError> Table::checkShape(const Row &row) const
 {
-    // Validate schema: check column count
-    if (row.values.size() != scheme.size())
-        return std::unexpected(TableError::SCHEME_MISMATCH);
+    if (auto count = checkColumnCount(row); !count)
+        return count;
 
     // Validate schema: check types for each column
     for (int i = 0; i < static_cast<int>(row.values.size()); i++)
@@ -203,28 +224,60 @@ std::expected<void, TableError> Table::checkRow(const Row &row)
     if (auto shape = checkShape(row); !shape)
         return shape;
 
-    // The key is compared as an int, like the index does, so 007 and 7 collide.
-    // NULL keys are not indexed and never collide.
-    std::optional<int> key;
     try
     {
-        key = keyOf(row);
+        keyOf(row);
     }
     catch (...)
     {
         // Passes the digit check but overflows int, e.g. 99999999999
         return std::unexpected(TableError::INDEX_INSERTION_FAILED);
     }
-    if (key && index.search(*key).has_value())
+    if (findDuplicate(row))
         return std::unexpected(TableError::DUPLICATE_KEY);
     return {};
 }
 
-std::expected<void, TableError> Table::insertRow(const Row &row, bool enforceUnique)
+std::optional<size_t> Table::findDuplicate(const Row &row)
+{
+    // Rows are read once, and only if a UNIQUE column other than the key needs a scan
+    std::optional<std::vector<Row>> stored;
+
+    for (size_t i = 0; i < scheme.size() && i < row.values.size(); i++)
+    {
+        // NULL is not part of uniqueness: any number of rows may hold it
+        if (!scheme[i].unique || !row.values[i])
+            continue;
+
+        if (static_cast<int>(i) == keyCol)
+        {
+            // The key is compared as an int, like the index does, so 007 and 7 collide
+            try
+            {
+                if (auto key = keyOf(row); key && index.search(*key).has_value())
+                    return i;
+            }
+            catch (...) {} // overflows int: not indexed, checkRow reports it
+            continue;
+        }
+
+        if (!stored)
+            stored = selectRow(nullptr);
+        for (const Row &other : *stored)
+        {
+            if (i < other.values.size() && other.values[i]
+                && valuesEqual(scheme[i].type, *other.values[i], *row.values[i]))
+                return i;
+        }
+    }
+    return std::nullopt;
+}
+
+std::expected<void, TableError> Table::insertRow(const Row &row, bool validate)
 {
     // Validate before writing: a rejected row used to be stored anyway when the key
     // overflowed int, since the index was only touched after the page write
-    auto valid = enforceUnique ? checkRow(row) : checkShape(row);
+    auto valid = validate ? checkRow(row) : checkColumnCount(row);
     if (!valid)
         return valid;
 
@@ -244,7 +297,7 @@ std::expected<void, TableError> Table::insertRow(const Row &row, bool enforceUni
 
     // Index column 0, if it is INT, as primary key. A NULL key gets no index entry:
     // WHERE id = x never matches it anyway, and IS NULL always does a full scan.
-    // Without enforceUnique a legacy key that overflows int is kept unindexed, like
+    // Without validate a legacy key that overflows int is kept unindexed, like
     // rebuildIndex does, so the rewrite does not drop it.
     try
     {
@@ -253,6 +306,7 @@ std::expected<void, TableError> Table::insertRow(const Row &row, bool enforceUni
     }
     catch (...) {}
 
+    trackAutoValue(row);
     nextKey++;
     return {};
 }
@@ -261,8 +315,7 @@ std::vector<Row> Table::selectRow(Condition *cond)
 {
     // Cautare rapida cu indexul: doar pentru WHERE col = valoare pe prima coloana INT
     if (cond != nullptr && cond->op == "=" &&
-        !scheme.empty() && cond->column == scheme[0].name &&
-        scheme[0].type == "INT")
+        keyCol >= 0 && cond->column == scheme[keyCol].name)
     {
         // id = NULL matches nothing
         if (!cond->value)
@@ -408,9 +461,20 @@ void Table::dropStorage()
     nextKey = 0;
 }
 
+// Keeps maxAuto at the highest AUTOINCREMENT value seen. A value that is not a number that
+// fits a long long (a legacy row) is ignored.
+void Table::trackAutoValue(const Row &row)
+{
+    if (autoCol < 0 || autoCol >= static_cast<int>(row.values.size()) || !row.values[autoCol])
+        return;
+    try { maxAuto = std::max(maxAuto, std::stoll(*row.values[autoCol])); }
+    catch (...) {}
+}
+
 void Table::rebuildIndex()
 {
     index.clear();
+    maxAuto = 0;
     std::vector<int> pageIds = pageManager.getPageIds();
     int globalRowCounter = 0;
 
@@ -423,15 +487,13 @@ void Table::rebuildIndex()
             Row row;
             for (const auto &field : splitFields(rows[r], '|'))
                 row.values.push_back(decodeValue(field));
-            if (!row.values.empty() && row.values[0] && !scheme.empty() && scheme[0].type == "INT")
-            {
-                try
-                {
-                    int key = std::stoi(*row.values[0]);
-                    index.insert(key, gid, r);
+            try {
+                if (auto key = keyOf(row)) {
+                    index.insert(*key, gid, r);
                 }
-                catch (...) {}
             }
+            catch (...) {}
+            trackAutoValue(row);
             globalRowCounter++;
         }
     }

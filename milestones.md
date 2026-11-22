@@ -68,7 +68,28 @@ ambiguități de delimitatori, extensibil (poți adăuga câmpuri fără breakin
   engleză — uniformizate stilistic (fără punct final). Struct-ul mort `ParseResult` din
   `Parser.hpp` a fost eliminat. Test nou anti-regresie în `tests/test_engine.cpp` (11c).
 - [x] **Validare config** ✅ *(rezolvat)* — crash dacă `config.json` are valori invalide (ex. `"port": "abc"`).
-- [ ] **Constrângeri de coloană: UNIQUE și AUTOINCREMENT**
+- [x] **Constrângeri de coloană: UNIQUE și AUTOINCREMENT** ✅ *(rezolvat — fără compatibilitate cu tabelele vechi)*
+  **Ce s-a decis și implementat** (descrierea de mai jos e planul inițial; unde diferă, contează asta):
+  - **Cheie doar declarată, fără migrare.** Cheia e prima coloană `UNIQUE INT`; o tabelă fără `UNIQUE` nu are
+    cheie. Nu există `#v2` și nici regula „coloana 0 INT e unică": un `.cat` vechi se citește fără flaguri,
+    deci tabelele vechi trebuie recreate (decizie: nu se păstrează tabele legacy).
+  - **Sintaxă:** `UNIQUE` și `AUTOINCREMENT` după tip, în orice ordine și cu orice majuscule; nu sunt keyword-uri
+    (rămân nume valide de coloane). `AUTOINCREMENT` implică `UNIQUE`. Catalogul scrie `unique` / `auto_increment`
+    după tip (`Catalog::load`/`save`, `Columns::unique`/`auto_increment`).
+  - **`Table`:** `keyCol` (indexată) și `autoCol`; `findDuplicate(row)` caută cheia în B+ tree și restul coloanelor
+    `UNIQUE` prin scan, cu `Table::valuesEqual` (același `=` ca `WHERE`, extras din `evaluateCondition`).
+    NULL nu e duplicat. Rescrierea (`insertRow(row, false)`) și replay-ul WAL nu verifică.
+  - **`AUTOINCREMENT`:** doar INT, cel mult o coloană (erori la `CREATE TABLE`). Valoarea = maximul din coloană + 1,
+    calculat în `rebuildIndex`; generată în `Engine::executeInsert` înainte de `checkRow` și de WAL, deci replay-ul
+    dă același id. Contorul nu e persistat: id-ul cel mai mare șters se refolosește. `UPDATE ... SET id = NULL` e eroare.
+  - **`UPDATE`:** verificarea de duplicat acoperă orice coloană `UNIQUE` atribuită, nu doar cheia.
+  - **Protocol:** `"insert_id"` în `{"type":"ok","affected":1,"insert_id":N}` doar pentru tabele cu `AUTOINCREMENT`
+    (`Engine::getLastInsertId`); `PROTOCOL_VERSION` rămâne `1.0.0`. Mesajul de duplicat numește coloana și valoarea:
+    `Duplicate key <valoare> for column <col>`.
+  - **Teste:** `TableTest` 18–25, `EngineTest` (`UniqueStringColumn…`, `AutoIncrement…`, `UpdateOfUniqueColumnIsChecked`,
+    `CreateTableValidatesAutoIncrement`), `ParserTest` 23–28, `CatalogTest.ConstraintFlagsRoundTrip`, un test WAL și unul
+    de rețea; mutații verificate. `teste.md` §10, `README.md`, `CLIENT_PROTOCOL.md` §4, §7.3.
+  **Planul inițial (păstrat pentru context):**
   Azi cheia e implicită: prima coloană a tabelului, dacă e INT, e indexată și unică (`keyOf`,
   `checkRow`, verificarea din `executeUpdate`). În P1 pentru că mutarea la cheie declarată schimbă
   ce vede un client, deci trebuie decisă înainte de pachetul Python.
@@ -107,6 +128,7 @@ Features SQL — clientul doar pasează string-ul mai departe, deci le adaugi or
 - [ ] **Prepared statements** (parametrizare + escaping, parțial în pachet)
 - [ ] **Rebuild index la fiecare query** — acum O(N)/query, devine lent pe tabele mari
 - [ ] **Truncare WAL** — crește nelimitat pe procese long-running
+- [ ] **Fish** - ca si in shell care iti sugereaza comenzile SQL(IntelliSense)
 
 ---
 
@@ -362,16 +384,48 @@ CREATE DATABASE); `CLIENT_PROTOCOL.md` §5.2, §6.1, §7.1, §7.3, §7.4, §7.5,
 `PROTOCOL_VERSION` rămâne `1.0.0` (doar mesaje de eroare noi).
 
 ### Deschise — găsite pe drum
-- [ ] **Caractere necunoscute ignorate în tăcere de lexer** — ramura `else { position++; }` din
+- [x] **Caractere necunoscute ignorate în tăcere de lexer** — ramura `else { position++; }` din
   `Lexer::tokenize` aruncă orice nu recunoaște: `;`, `"`, `@`, `.` izolat, `- 5` (devine `5`).
+  La fel `.5` și `-.5` fără ghilimele: punctul de la început se aruncă și se stochează `5`
+  (`'.5'` cu ghilimele e corect).
   `teste.md` 2.11 și 8.3 depind de asta (`"Dan"` merge din întâmplare, `;` final e ignorat), deci
   un fix trebuie să păstreze `;` și să decidă ce face cu restul (eroare de parsare, probabil).
-- [ ] **`<` / `>` pe STRING compară numeric** — `evaluateCondition` trece STRING-ul prin `stod`, deci
-  `n < '9'` nu găsește `'10'`, iar `n > 'abc'` nu găsește nimic. Ar trebui comparat lexicografic
-  (sau refuzat). La fel `<` / `>` pe BOOL, unde merg doar `1` / `0`.
-- [ ] **FLOAT acceptă `.` fără nicio cifră** — `validateValueForType` verifică doar „cifre și cel
-  mult un `.`”, deci `'.'` și `'-.'` se stochează într-o coloană FLOAT (și trec ca literal în WHERE,
-  unde nu se potrivesc cu nimic). Ar trebui cerută cel puțin o cifră.
+  **Rezolvat:** `Lexer::tokenize` păstrează orice caracter necunoscut ca token nou `TokenType::UNKNOWN`
+  (în loc să-l arunce), iar `Parser::parse` respinge orice query care conține unul, cu
+  `ParseError::UnknownCharacter` → `Parse error: Unrecognized character in query`. `;` rămâne ignorat,
+  în orice poziție. `.5`, `-.5`, `+.5` sunt acum numere (se stochează cu punctul, ca `'.5'`);
+  `"Dan"`, `@`, `.` izolat și `- 5` sunt erori. Mesaj nou în `CLIENT_PROTOCOL.md` §8; `PROTOCOL_VERSION`
+  rămâne `1.0.0` (doar un mesaj de eroare în plus, pentru query-uri care înainte rulau cu alt sens).
+  Teste: `LexerTest` 18, 20–22, `EngineTest.UnknownCharactersAreRejected`; `teste.md` 2.11 și 2.13 actualizate.
+- [x] **`<` / `>` pe STRING compară numeric** — decis: toți cei 6 operatori urmează tipul coloanei.
+  STRING se compară pe octeți (`std::string` compară prin `char_traits<char>`, adică octeți fără
+  semn): ține cont de majuscule (`'B' < 'a'`), `'10' < '9'`, iar UTF-8 iese în ordinea code
+  point-urilor (`'ă'` după `'z'`); fără collation după limbă. BOOL se compară logic, cu
+  `false < true`, pe aceleași 6 forme ca la `=`. Dispatch-ul pe operator stă într-un singur loc,
+  `applyOperator<T>` din `Table.cpp`, folosit de ramurile numerică, BOOL și STRING.
+  `requireValidCondition` nu s-a schimbat: pe STRING orice literal e valid, iar pe BOOL literalul
+  era deja validat. Inițial: STRING trecea prin `stod`, deci `n < '9'` nu găsea `'10'`, iar
+  `n > 'abc'` nu găsea nimic; pe BOOL mergeau doar `1` / `0`.
+  Test: `EngineTest.OrderingComparesByColumnType`.
+- [x] **FLOAT acceptă `.` fără nicio cifră** — `validateValueForType` cere acum cel puțin o cifră:
+  `.5` și `5.` rămân valide (`stod` le citește), iar `.`, `-.`, `+.` dau `Type validation failed`.
+  Se aplică automat la INSERT, `UPDATE SET` și literalul din WHERE (acolo INT și FLOAT se validează
+  tot ca FLOAT), deci `price = '.'` e acum eroare de tip, nu 0 rânduri.
+  Test: `EngineTest.FloatNeedsAtLeastOneDigit`.
+- [x] **Bonus — un `.` stocat înainte ar fi dispărut la prima rescriere** *(găsit pe drum)* —
+  `insertRow(row, false)` (rescrierea din `deleteRow`/`updateRow` și replay-ul WAL) rula
+  `checkShape`, care verifică și tipurile. Cu validarea mai strictă, un FLOAT `.` vechi ar fi picat
+  verificarea, iar rescrierea ignoră rezultatul: primul DELETE/UPDATE pe tabel ar fi șters rândul
+  în tăcere, iar replay-ul l-ar fi pierdut cu un `WAL replay error`. Aceeași clasă ca duplicatele
+  vechi, rezolvată la fel: parametrul se numește acum `validate`, iar `false` verifică doar numărul
+  de coloane (`checkColumnCount`, scos din `checkShape`). Rândurile de pe calea asta vin din
+  storage sau din WAL și erau valide când au fost scrise.
+  Test: `TableTest.LegacyValueSurvivesRewrite`.
+
+Toate verificate prin mutații (FLOAT fără `hasDigit`, STRING din nou prin `stod`, BOOL din nou doar
+pe `=` / `!=`, rescriere din nou cu `checkShape` → fiecare pică cel puțin un test). `teste.md`
+re-rulat integral prin engine. Docs: `teste.md` 2.35 (nou), §3.3, 3.27 și 3.28 (noi); README
+(Types, WHERE); `CLIENT_PROTOCOL.md` §5.1, §7.1. `PROTOCOL_VERSION` rămâne `1.0.0`.
 
 ### Bug-uri adevărate în NetworkServer.cpp
    Fiindcă tot revii la fișierul ăsta — astea sunt problemele reale din el:

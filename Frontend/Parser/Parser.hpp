@@ -19,7 +19,7 @@
 enum class ParseError {
     UnexpectedToken, MissingKeyword, MissingPunctuation, InvalidIdentifier,
     InvalidType, EmptyColumns, ValuesMismatch, TrailingComma, ExtraTokens,
-    END_OF_FILE
+    UnknownCharacter, END_OF_FILE
 };
 
 //Maps a ParseError to a clear, human-readable English message for the client/GUI
@@ -36,6 +36,7 @@ inline std::string parseErrorMessage(ParseError e)
         case ParseError::ValuesMismatch:     return "Column count does not match value count";
         case ParseError::TrailingComma:      return "Trailing comma";
         case ParseError::ExtraTokens:        return "Unexpected tokens after end of statement";
+        case ParseError::UnknownCharacter:   return "Unrecognized character in query";
         case ParseError::END_OF_FILE:        return "Unexpected end of query";
     }
     return "Unknown parse error";

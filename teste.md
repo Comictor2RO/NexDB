@@ -55,7 +55,7 @@ rețea `null` JSON), iar `"NULL"` înseamnă textul de 4 litere (în GUI apare n
 
 | # | Comandă | Rezultat |
 |---|---|---|
-| 1.1 | `CREATE TABLE users (id INT, name STRING, age INT, score FLOAT, active BOOL)` | ok |
+| 1.1 | `CREATE TABLE users (id INT UNIQUE, name STRING, age INT, score FLOAT, active BOOL)` | ok — `id` e `UNIQUE`, deci e cheia tabelei (prima coloană `UNIQUE INT`) |
 | 1.2 | `create table Notes (id int, note text, done boolean)` | ok — `note` devine `STRING`, `done` devine `BOOL` |
 | 1.3 | `CREATE TABLE flags (text TEXT, boolean BOOLEAN);` | ok — `text`/`boolean` merg ca nume de coloane |
 | 1.4 | `CREATE TABLE users (x INT)` | eroare `Table users already exists` (schema veche rămâne) |
@@ -83,14 +83,14 @@ rețea `null` JSON), iar `"NULL"` înseamnă textul de 4 litere (în GUI apare n
 | 2.4 | `INSERT INTO users VALUES (4, '', -5, +2.5, 0)` | ok, affected 1 — string gol; `-5`; `+2.5` se stochează `2.5` |
 | 2.5 | `INSERT INTO users VALUES (5, NULL, NULL, NULL, NULL)` | ok, affected 1 — NULL în STRING, INT, FLOAT, BOOL |
 | 2.6 | `INSERT INTO users VALUES (6, 'NULL', 20, 1.0, TRUE)` | ok, affected 1 — textul `"NULL"`, nu NULL; `1.0` rămâne `1.0` |
-| 2.7 | `INSERT INTO users VALUES (NULL, 'ghost', 1, 1, FALSE)` | ok, affected 1 — NULL e permis și în prima coloană INT (cea indexată) |
+| 2.7 | `INSERT INTO users VALUES (NULL, 'ghost', 1, 1, FALSE)` | ok, affected 1 — NULL e permis și în coloana `id` (`UNIQUE` și indexată) |
 | 2.8 | `INSERT INTO users (name, id) VALUES ('Carol', 7)` | ok, affected 1 — rând `7, Carol, null, null, null` (coloanele omise = NULL) |
-| 2.9 | `INSERT INTO users VALUES (1, 'Dup', 50, 3, true)` | `Insert failed for table users: Duplicate key 1 for column id` — prima coloană INT e cheie unică; nu se scrie nimic (nici în WAL) |
+| 2.9 | `INSERT INTO users VALUES (1, 'Dup', 50, 3, true)` | `Insert failed for table users: Duplicate key 1 for column id` — `id` e `UNIQUE`; nu se scrie nimic (nici în WAL) |
 | 2.9b | `INSERT INTO users VALUES (12, 'Dup', 50, 3, true)` | ok, affected 1 — același rând, cu id liber. `007` ar fi tot duplicat pentru `7` (cheia se compară ca int); NULL în id e permis de oricâte ori |
 | 2.10 | `INSERT INTO users VALUES (9, 'a\|b~c%d', 1, 1, true)` | ok, affected 1 — `\|`, `~`, `%` se păstrează exact |
-| 2.11 | `INSERT INTO users VALUES (10, "Dan", 1, 1, true)` | ok ⚠️ — ghilimelele duble sunt aruncate, se stochează `Dan` |
+| 2.11 | `INSERT INTO users VALUES (10, "Dan", 1, 1, true)` | eroare `Parse error: Unrecognized character in query` — string-urile se scriu cu `'`; nimic nu se inserează |
 | 2.12 | `insert into users values (11, 'lower', 1, 1, true);` | ok, affected 1 — minuscule + `;` final |
-| 2.13 | `INSERT INTO users VALUES (8, 'x', 1, - 5, true)` | ok ⚠️ — semn cu spațiu: `- 5` devine `5` (§9) |
+| 2.13 | `INSERT INTO users VALUES (8, 'x', 1, - 5, true)` | eroare `Parse error: Unrecognized character in query` — semnul trebuie lipit de cifră (`-5`) |
 
 ### 2.2 Erori
 
@@ -111,6 +111,7 @@ rețea `null` JSON), iar `"NULL"` înseamnă textul de 4 litere (în GUI apare n
 | 2.32 | `INSERT INTO users VALUES ()` | `Parse error: Unexpected token in query` |
 | 2.33 | `INSERT INTO nosuch VALUES (1)` | `Table nosuch does not exist` |
 | 2.34 | `INSERT users VALUES (1)` | `Parse error: Missing required keyword` |
+| 2.35 | `INSERT INTO users VALUES (8, 'x', 1, '.', true)` | aceeași eroare de tip ca 2.24 — FLOAT cere cel puțin o cifră (`'.5'` și `5.` sunt valide) |
 
 Starea tabelului `users` după secțiunea 2 (13 rânduri, în ordinea inserării):
 
@@ -162,7 +163,10 @@ INT și FLOAT compară numeric, BOOL după valoarea logică (`true` = `TRUE` = `
 | 3.17 | `SELECT name FROM users WHERE active = true` | aceleași 8 rânduri ca 3.16 |
 | 3.18 | `SELECT id FROM users WHERE name = ''` | `[4]` |
 
-### 3.3 WHERE cu `<`, `>`, `<=`, `>=` (comparație numerică)
+### 3.3 WHERE cu `<`, `>`, `<=`, `>=` (după tipul coloanei)
+
+INT și FLOAT compară numeric, BOOL logic (`false < true`), STRING pe octeți: ține cont de
+majuscule (`'B' < 'a'`) și `'10' < '9'`.
 
 | # | Comandă | Rezultat |
 |---|---|---|
@@ -173,6 +177,8 @@ INT și FLOAT compară numeric, BOOL după valoarea logică (`true` = `TRUE` = `
 | 3.24 | `SELECT name FROM users WHERE score <= 1` | `don't, "NULL", ghost, a\|b~c%d, Dan, lower` |
 | 3.25 | `SELECT name FROM users WHERE score > -2` | 11 rânduri — toate cu score diferit de NULL |
 | 3.26 | `SELECT id FROM users WHERE age > 'abc'` | `Type validation failed (invalid value for column age of type INT)` — literalul trebuie să încapă în tipul coloanei. Pe INT merge orice număr (`age > 2.5`), pe BOOL doar `true false TRUE FALSE 1 0` |
+| 3.27 | `SELECT name FROM users WHERE name < 'C'` | `Alice, Bob, ""` — `'Carol' > 'C'` (prefix mai scurt), minusculele vin după majuscule, NULL nu se compară |
+| 3.28 | `SELECT name FROM users WHERE active > false` | aceleași 8 rânduri ca 3.16 |
 
 ### 3.4 WHERE cu NULL
 
@@ -315,6 +321,42 @@ Marcate cu ⚠️ mai sus. Toate sunt comportamentul real al engine-ului la data
 
 | Capcană | Unde | Detaliu |
 |---|---|---|
-| Semn cu spațiu | 2.13 | `- 5` devine `5`; doar `-5` lipit păstrează semnul. |
-| Ghilimele duble | 2.11 | `"Dan"` devine `Dan`; merge din întâmplare. |
 | Fără `AND`/`OR` | 3.44 | Exact o condiție per `WHERE`. Nici `ORDER BY`, `LIMIT`, `JOIN`. |
+| Id refolosit | 10.17 | Contorul `AUTOINCREMENT` e maximul curent + 1, nu o secvență salvată: după ce ștergi rândul cu cel mai mare id, următorul `INSERT` primește același id. |
+| Fără migrare | 10 | Un `.cat` scris înainte de `UNIQUE` nu are flaguri, deci tabelele lui nu au cheie. Se recreează. |
+
+---
+
+## 10. UNIQUE și AUTOINCREMENT
+
+Secvență, pe aceeași bază de date. Tabelul `accounts` începe gol. Pe rețea, un `INSERT` în
+`accounts` răspunde `{"type": "ok", "affected": 1, "insert_id": N}`; un `INSERT` în `users`
+(fără `AUTOINCREMENT`) rămâne `{"type": "ok", "affected": 1}`.
+
+| # | Comandă | Rezultat |
+|---|---|---|
+| 10.1 | `CREATE TABLE accounts (id INT AUTOINCREMENT, email STRING UNIQUE, name STRING)` | ok — `id` e `UNIQUE` implicit (cheia tabelei), `email` e `UNIQUE` |
+| 10.2 | `INSERT INTO accounts (email, name) VALUES ('a@x', 'Ana')` | ok, affected 1, `insert_id` 1 — `id` omis = generat |
+| 10.3 | `INSERT INTO accounts VALUES (NULL, 'b@x', 'Bob')` | ok, affected 1, `insert_id` 2 — `NULL` în coloana `AUTOINCREMENT` = generat |
+| 10.4 | `INSERT INTO accounts VALUES (10, 'c@x', 'Cip')` | ok, `insert_id` 10 — valoare explicită, păstrată; contorul sare peste ea |
+| 10.5 | `INSERT INTO accounts (email, name) VALUES ('d@x', 'Dan')` | ok, `insert_id` 11 |
+| 10.6 | `INSERT INTO accounts VALUES (10, 'e@x', 'Eva')` | `Insert failed for table accounts: Duplicate key 10 for column id` |
+| 10.7 | `INSERT INTO accounts (email, name) VALUES ('a@x', 'Alt')` | `Insert failed for table accounts: Duplicate key a@x for column email` |
+| 10.8 | `INSERT INTO accounts (email, name) VALUES ('A@x', 'Mare')` | ok, `insert_id` 12 — textul se compară pe octeți, `A@x` ≠ `a@x` |
+| 10.9 | `INSERT INTO accounts (name) VALUES ('Fara1')` | ok, `insert_id` 13, `email` = `NULL` |
+| 10.10 | `INSERT INTO accounts (name) VALUES ('Fara2')` | ok, `insert_id` 14 — `NULL` se repetă oricâte ori într-o coloană `UNIQUE` |
+| 10.11 | `UPDATE accounts SET email = 'a@x' WHERE id = 2` | `Update failed for table accounts: Duplicate key a@x for column email` — o are deja `id` 1; nu se scrie nimic |
+| 10.12 | `UPDATE accounts SET email = 'same'` | `Update failed for table accounts: Duplicate key same for column email` — ar rămâne mai multe rânduri cu aceeași valoare |
+| 10.13 | `UPDATE accounts SET email = 'a@x' WHERE id = 1` | ok, affected 1 — propria valoare |
+| 10.14 | `UPDATE accounts SET id = NULL WHERE id = 1` | `Update failed for table accounts: Column id is AUTOINCREMENT and cannot be NULL` |
+| 10.15 | `UPDATE accounts SET id = 50 WHERE id = 1` | ok, affected 1 |
+| 10.16 | `INSERT INTO accounts (email, name) VALUES ('g@x', 'Gil')` | ok, `insert_id` 51 — maximul curent (50) + 1 |
+| 10.17 | `DELETE FROM accounts WHERE id = 51` apoi 10.16 din nou cu `'h@x'` | `insert_id` 51 din nou ⚠️ — contorul e maximul curent, deci id-ul cel mai mare șters se refolosește |
+| 10.18 | `CREATE TABLE loose (id INT, name STRING)` apoi `INSERT INTO loose VALUES (1, 'a')` de două ori | ok de ambele ori — fără `UNIQUE` nu există cheie, duplicatele sunt permise |
+| 10.19 | `create table lw (a int unique, b text)` | ok — `unique` nu ține cont de majuscule |
+| 10.20 | `CREATE TABLE sv (code STRING UNIQUE, rank INT UNIQUE)` | ok — fără `AUTOINCREMENT`; cheia (indexată) e `rank`, prima coloană `UNIQUE INT` |
+| 10.21 | `CREATE TABLE b1 (name STRING AUTOINCREMENT)` | `Column name cannot be AUTOINCREMENT: only INT columns can` — tabelul nu se creează |
+| 10.22 | `CREATE TABLE b2 (a INT AUTOINCREMENT, b INT AUTOINCREMENT)` | `Table b2 has more than one AUTOINCREMENT column` |
+| 10.23 | `CREATE TABLE b3 (id INT PRIMARY KEY)` | `Parse error: Unexpected token in query` — doar `UNIQUE` și `AUTOINCREMENT` există |
+| 10.24 | `CREATE TABLE b4 (id INT UNIQUE foo)` | `Parse error: Unexpected token in query` |
+| 10.25 | `CREATE TABLE unique (unique INT UNIQUE)` | ok — `UNIQUE` și `AUTOINCREMENT` nu sunt cuvinte rezervate, merg ca nume |
