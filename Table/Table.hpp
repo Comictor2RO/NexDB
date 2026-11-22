@@ -67,9 +67,13 @@ class Table {
         // Position of the AUTOINCREMENT column, or -1 if the table has none
         int autoColumn() const { return autoCol; }
 
-        // The value an omitted AUTOINCREMENT would get: the highest value in the column + 1,
-        // or 1 for an empty table. A deleted highest value is therefore handed out again.
+        // The value an omitted AUTOINCREMENT would get: one past the highest value the column has
+        // ever held, or 1 for a new table. That is the larger of the stored high-water mark and the
+        // highest value still in the rows, so a deleted id is never handed out again.
         long long nextAutoValue() const { return maxAuto + 1; }
+
+        // That highest value (the mark or the rows', whichever is larger); 0 if none
+        long long autoMax() const { return maxAuto; }
 
     private:
         std::string name;

@@ -322,7 +322,7 @@ Marcate cu ⚠️ mai sus. Toate sunt comportamentul real al engine-ului la data
 | Capcană | Unde | Detaliu |
 |---|---|---|
 | Fără `AND`/`OR` | 3.44 | Exact o condiție per `WHERE`. Nici `ORDER BY`, `LIMIT`, `JOIN`. |
-| Id refolosit | 10.17 | Contorul `AUTOINCREMENT` e maximul curent + 1, nu o secvență salvată: după ce ștergi rândul cu cel mai mare id, următorul `INSERT` primește același id. |
+| Goluri în id | 10.17, 10.32 | Un id șters nu se mai dă niciodată (nici cel mai mare, nici după `DELETE` fără `WHERE`), deci secvența are goluri. Se reia de la 1 doar după `DROP TABLE` + `CREATE TABLE`. |
 | Fără migrare | 10 | Un `.cat` scris înainte de `UNIQUE` nu are flaguri, deci tabelele lui nu au cheie. Se recreează. |
 
 ---
@@ -351,7 +351,7 @@ Secvență, pe aceeași bază de date. Tabelul `accounts` începe gol. Pe rețea
 | 10.14 | `UPDATE accounts SET id = NULL WHERE id = 1` | `Update failed for table accounts: Column id is AUTOINCREMENT and cannot be NULL` |
 | 10.15 | `UPDATE accounts SET id = 50 WHERE id = 1` | ok, affected 1 |
 | 10.16 | `INSERT INTO accounts (email, name) VALUES ('g@x', 'Gil')` | ok, `insert_id` 51 — maximul curent (50) + 1 |
-| 10.17 | `DELETE FROM accounts WHERE id = 51` apoi 10.16 din nou cu `'h@x'` | `insert_id` 51 din nou ⚠️ — contorul e maximul curent, deci id-ul cel mai mare șters se refolosește |
+| 10.17 | `DELETE FROM accounts WHERE id = 51` apoi 10.16 din nou cu `'h@x'` | `insert_id` 52 — id-ul 51 nu se mai dă: contorul ține cel mai mare id avut vreodată, nu maximul curent |
 | 10.18 | `CREATE TABLE loose (id INT, name STRING)` apoi `INSERT INTO loose VALUES (1, 'a')` de două ori | ok de ambele ori — fără `UNIQUE` nu există cheie, duplicatele sunt permise |
 | 10.19 | `create table lw (a int unique, b text)` | ok — `unique` nu ține cont de majuscule |
 | 10.20 | `CREATE TABLE sv (code STRING UNIQUE, rank INT UNIQUE)` | ok — fără `AUTOINCREMENT`; cheia (indexată) e `rank`, prima coloană `UNIQUE INT` |
@@ -360,3 +360,14 @@ Secvență, pe aceeași bază de date. Tabelul `accounts` începe gol. Pe rețea
 | 10.23 | `CREATE TABLE b3 (id INT PRIMARY KEY)` | `Parse error: Unexpected token in query` — doar `UNIQUE` și `AUTOINCREMENT` există |
 | 10.24 | `CREATE TABLE b4 (id INT UNIQUE foo)` | `Parse error: Unexpected token in query` |
 | 10.25 | `CREATE TABLE unique (unique INT UNIQUE)` | ok — `UNIQUE` și `AUTOINCREMENT` nu sunt cuvinte rezervate, merg ca nume |
+| 10.26 | `CREATE TABLE produse (id INT AUTOINCREMENT, name STRING)` | ok |
+| 10.27 | `INSERT INTO produse VALUES ('milk')` | ok, affected 1, `insert_id` 1 — forma scurtă: fără listă de coloane și cu o valoare lipsă, `AUTOINCREMENT` e sărit, iar valorile merg la celelalte coloane în ordine |
+| 10.28 | `INSERT INTO produse VALUES (bread)` | ok, `insert_id` 2 — și cuvântul fără ghilimele merge |
+| 10.29 | `INSERT INTO produse VALUES (10, 'tea')` | ok, `insert_id` 10 — forma completă merge în continuare, cu id dat |
+| 10.30 | `INSERT INTO produse VALUES (1, 'a', 'b')` | `Insert failed for table produse: Column count mismatch (expected 2 columns)` — doar „cu o valoare mai puțin" e special; orice alt număr rămâne eroare |
+| 10.31 | `CREATE TABLE mid (a STRING, id INT AUTOINCREMENT, b STRING)` apoi `INSERT INTO mid VALUES ('x', 'y')` | ok — `id` se completează pe poziția lui din mijloc: rândul e `x, 1, y` |
+| 10.32 | `DELETE FROM produse WHERE id = 10` | ok, affected 1 |
+| 10.33 | `INSERT INTO produse VALUES ('jam')` | ok, `insert_id` 11 — id-ul 10 nu se refolosește, deși rândul a fost șters |
+| 10.34 | `DELETE FROM produse` apoi `INSERT INTO produse VALUES ('oat')` | ok, affected 3, apoi `insert_id` 12 — nici golirea tabelului nu readuce contorul |
+| 10.35 | `UPDATE produse SET id = 0 WHERE id = 12` apoi `INSERT INTO produse VALUES ('rye')` | ok, `insert_id` 13 — nici un `UPDATE` care mută cel mai mare id nu coboară contorul |
+| 10.36 | `DROP TABLE produse`, `CREATE TABLE produse (id INT AUTOINCREMENT, name STRING)`, `INSERT INTO produse VALUES ('new')` | `insert_id` 1 — un tabel creat din nou pornește de la 1 |

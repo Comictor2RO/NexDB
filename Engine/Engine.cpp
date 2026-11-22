@@ -217,6 +217,8 @@ void Engine::executeInsert(const InsertStatement &stmt)
     Row row;
     row.values = stmt.getValues();
 
+    const int autoCol = table.autoColumn();
+
     // With a column list, place each value at its schema position; columns left out get
     // NULL. The parser already checked that the list and the values have the same length.
     // Only the reordered row reaches the WAL, so recovery can replay it positionally.
@@ -237,11 +239,17 @@ void Engine::executeInsert(const InsertStatement &stmt)
         }
         row.values = std::move(ordered);
     }
+    // No column list, but exactly one value short and the table has an AUTOINCREMENT column:
+    // the values are for the other columns, in order, and the counter column is left out.
+    // So INSERT INTO products VALUES ('milk') works for (id INT AUTOINCREMENT, name STRING).
+    else if (autoCol >= 0 && row.values.size() + 1 == scheme.size())
+    {
+        row.values.insert(row.values.begin() + autoCol, std::nullopt);
+    }
 
     // An AUTOINCREMENT column left out of the INSERT, or given NULL, gets the next value.
     // Done before checkRow and before the WAL: the log then holds the concrete value, so
     // replaying it assigns exactly the same id.
-    const int autoCol = table.autoColumn();
     if (autoCol >= 0 && autoCol < static_cast<int>(row.values.size()) && !row.values[autoCol])
     {
         const long long next = table.nextAutoValue();
@@ -330,6 +338,13 @@ void Engine::executeDelete(const DeleteStatement &stmt)
 
     requireValidCondition(stmt.getCondition(), scheme, table, stmt.getTable());
 
+    // The row holding the highest AUTOINCREMENT value may be about to go: record that value in the
+    // catalog first, so the id is never handed out again. Saved before the WAL is written, so a
+    // crash in between leaves at worst a gap, never a reused id. Recovery skips it: the mark was
+    // already saved when the statement first ran.
+    if (!inRecovery && table.autoColumn() >= 0)
+        catalog->raiseAutoHighWater(stmt.getTable(), table.autoMax());
+
     if (!inRecovery)
     {
         // Log the full new state before touching storage — guarantees recovery
@@ -365,6 +380,11 @@ void Engine::executeUpdate(const UpdateStatement &stmt)
     }
     requireUniqueNames(assigned);
     requireValidCondition(stmt.getCondition(), scheme, table, stmt.getTable());
+
+    // Same reason as in DELETE: assigning the AUTOINCREMENT column can overwrite its highest value
+    if (!inRecovery && table.autoColumn() >= 0
+        && std::find(assigned.begin(), assigned.end(), scheme[table.autoColumn()].name) != assigned.end())
+        catalog->raiseAutoHighWater(stmt.getTable(), table.autoMax());
 
     if (!inRecovery)
     {

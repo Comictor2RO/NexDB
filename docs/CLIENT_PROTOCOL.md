@@ -415,11 +415,23 @@ are checked by a scan.
 `AUTOINCREMENT` is allowed on `INT` columns only, at most one per table, and implies `UNIQUE`
 (`CREATE TABLE` refuses anything else: `Column <col> cannot be AUTOINCREMENT: only INT columns can`,
 `Table <name> has more than one AUTOINCREMENT column`). An `INSERT` that leaves the column out, or
-gives it `NULL`, stores the highest value in the column + 1, or `1` in an empty table, and the
-answer carries it as `insert_id` (§4). A value given explicitly is stored if it is unique and
-moves the counter past it. The counter is the current maximum, not a stored sequence, so after
-deleting the row with the highest id that id is handed out again. `UPDATE ... SET <col> = NULL` on
-an `AUTOINCREMENT` column is an error (`Column <col> is AUTOINCREMENT and cannot be NULL`).
+gives it `NULL`, stores one past the highest value the column has ever held, or `1` in a new table,
+and the answer carries it as `insert_id` (§4). Without a column list the column may be left out of the
+values altogether: when exactly one value is missing and the table has an `AUTOINCREMENT` column,
+the values belong to the other columns in order (`INSERT INTO products VALUES ('milk')` for
+`(id INT AUTOINCREMENT, name STRING)`). Any other count is still `Column count mismatch`. A value given explicitly is stored if it is unique and
+moves the counter past it.
+
+**An id is never handed out twice**, so a client may keep ids (in a cache, a link, another table)
+without them ever pointing at a different row later. Deleting a row, the one with the highest id or
+all of them, does not give its id back, and an `UPDATE` that changes the id does not either: after
+rows 1, 2, 3 and the deletion of 3 the next id is 4; after the deletion of 2 it is also 4. Ids can
+therefore have gaps, and the sequence only restarts at 1 when the table is dropped and created
+again. The counter is the highest value ever held, kept in the catalog and saved before a `DELETE`
+or `UPDATE` of that column can remove it, so it survives restarts and crashes.
+
+`UPDATE ... SET <col> = NULL` on an `AUTOINCREMENT` column is an error
+(`Column <col> is AUTOINCREMENT and cannot be NULL`).
 The server generates the value before writing the log, so recovery replays the same id.
 
 An `UPDATE` that does not assign a `UNIQUE` column never hits the duplicate error.

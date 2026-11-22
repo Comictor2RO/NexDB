@@ -8,13 +8,13 @@
 static constexpr float SPACING = 1.0f;
 static constexpr size_t MAX_UNDO = 200;
 
-// Same keyword list as the lexer, plus the type aliases the parser accepts
+// Same keyword list as the lexer, plus the type aliases and the column constraints the parser accepts
 static bool isKeyword(const std::string &upper)
 {
     static const char *keywords[] = {
         "SELECT", "INSERT", "DELETE", "FROM", "WHERE", "INTO", "VALUES", "CREATE", "TABLE",
         "INT", "STRING", "DROP", "UPDATE", "SET", "USE", "DATABASE", "FLOAT", "BOOL",
-        "NULL", "IS", "NOT", "TEXT", "BOOLEAN"
+        "NULL", "IS", "NOT", "TEXT", "BOOLEAN", "UNIQUE", "AUTOINCREMENT"
     };
     for (const char *k : keywords)
         if (upper == k)

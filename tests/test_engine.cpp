@@ -926,3 +926,123 @@ TEST_F(EngineTest, AutoIncrementAndUniqueSurviveRestart) {
     expectError(*engine, "INSERT INTO eng_restart (email) VALUES ('a')", "Duplicate key a for column email");
     EXPECT_EQ(engine->query("SELECT * FROM eng_restart").size(), 3u);
 }
+
+//With an AUTOINCREMENT column the INSERT may leave it out entirely: INSERT INTO products VALUES
+//('milk') fills the other columns in order and the counter fills the id. The full form still works
+TEST_F(EngineTest, InsertMayOmitTheAutoIncrementColumn) {
+    engine->query("CREATE TABLE eng_prod (id INT AUTOINCREMENT, name STRING)");
+
+    engine->query("INSERT INTO eng_prod VALUES ('milk')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(1));
+    engine->query("INSERT INTO eng_prod VALUES (bread)");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(2));
+    engine->query("INSERT INTO eng_prod VALUES (10, 'tea')");           //full form: id given
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(10));
+    engine->query("INSERT INTO eng_prod VALUES ('jam')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(11));
+
+    auto rows = engine->query("SELECT * FROM eng_prod");
+    ASSERT_EQ(rows.size(), 4u);
+    EXPECT_EQ(rows[0].values[0], "1");
+    EXPECT_EQ(rows[0].values[1], "milk");
+    EXPECT_EQ(rows[3].values[0], "11");
+    EXPECT_EQ(rows[3].values[1], "jam");
+
+    //Any other count is still a mismatch: too many, and not one short
+    expectError(*engine, "INSERT INTO eng_prod VALUES (1, 'a', 'b')", "Column count mismatch");
+    expectError(*engine, "INSERT INTO eng_prod VALUES (1, 'a', 'b', 'c')", "Column count mismatch");
+}
+
+//The counter column may sit anywhere: the short form lines the values up with the other columns
+TEST_F(EngineTest, ShortInsertWorksWithAutoIncrementInTheMiddle) {
+    engine->query("CREATE TABLE eng_mid (a STRING, id INT AUTOINCREMENT, b STRING)");
+    engine->query("INSERT INTO eng_mid VALUES ('x', 'y')");
+
+    auto rows = engine->query("SELECT * FROM eng_mid");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].values[0], "x");
+    EXPECT_EQ(rows[0].values[1], "1");
+    EXPECT_EQ(rows[0].values[2], "y");
+}
+
+//Without an AUTOINCREMENT column a short INSERT is still a count mismatch, and a rejected one
+//writes nothing
+TEST_F(EngineTest, ShortInsertWithoutAutoIncrementIsStillAnError) {
+    engine->query("CREATE TABLE eng_short (id INT UNIQUE, name STRING)");
+    expectError(*engine, "INSERT INTO eng_short VALUES ('milk')", "Column count mismatch");
+    EXPECT_TRUE(engine->query("SELECT * FROM eng_short").empty());
+}
+
+//An AUTOINCREMENT id is never handed out twice: deleting the row with the highest id, or every
+//row, does not bring the counter back
+TEST_F(EngineTest, AutoIncrementNeverReusesADeletedId) {
+    engine->query("CREATE TABLE eng_noreuse (id INT AUTOINCREMENT, name STRING)");
+    engine->query("INSERT INTO eng_noreuse VALUES ('a')");
+    engine->query("INSERT INTO eng_noreuse VALUES ('b')");
+    engine->query("INSERT INTO eng_noreuse VALUES ('c')");
+
+    engine->query("DELETE FROM eng_noreuse WHERE id = 2");          //a gap in the middle
+    engine->query("INSERT INTO eng_noreuse VALUES ('d')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(4));
+
+    engine->query("DELETE FROM eng_noreuse WHERE id = 4");          //the highest id
+    engine->query("INSERT INTO eng_noreuse VALUES ('e')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(5));
+
+    engine->query("DELETE FROM eng_noreuse");                       //every row
+    engine->query("INSERT INTO eng_noreuse VALUES ('f')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(6));
+}
+
+//An explicit id moves the counter too, and deleting it does not move it back
+TEST_F(EngineTest, DeletingAnExplicitHighIdKeepsTheCounter) {
+    engine->query("CREATE TABLE eng_explicit (id INT AUTOINCREMENT, name STRING)");
+    engine->query("INSERT INTO eng_explicit VALUES (10, 'x')");
+    engine->query("DELETE FROM eng_explicit WHERE id = 10");
+    engine->query("INSERT INTO eng_explicit VALUES ('y')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(11));
+}
+
+//An UPDATE that moves the highest id away must not lower the counter either
+TEST_F(EngineTest, UpdatingTheHighestIdKeepsTheCounter) {
+    engine->query("CREATE TABLE eng_updhw (id INT AUTOINCREMENT, name STRING)");
+    engine->query("INSERT INTO eng_updhw VALUES ('a')");
+    engine->query("INSERT INTO eng_updhw VALUES ('b')");
+    engine->query("INSERT INTO eng_updhw VALUES ('c')");
+
+    engine->query("UPDATE eng_updhw SET id = 0 WHERE id = 3");
+    engine->query("INSERT INTO eng_updhw VALUES ('d')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(4));
+}
+
+//The mark is saved in the catalog, so it survives a restart; DROP TABLE forgets it and a table
+//created again starts from 1
+TEST_F(EngineTest, AutoIncrementCounterSurvivesRestartAndResetsOnDrop) {
+    engine->query("CREATE TABLE eng_hwrestart (id INT AUTOINCREMENT, name STRING)");
+    engine->query("INSERT INTO eng_hwrestart VALUES ('a')");
+    engine->query("INSERT INTO eng_hwrestart VALUES ('b')");
+    engine->query("DELETE FROM eng_hwrestart WHERE id = 2");
+
+    delete engine;
+    engine = new Engine(128, dbFile, catFile, walFile);
+
+    engine->query("INSERT INTO eng_hwrestart VALUES ('c')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(3));
+
+    engine->query("DROP TABLE eng_hwrestart");
+    engine->query("CREATE TABLE eng_hwrestart (id INT AUTOINCREMENT, name STRING)");
+    engine->query("INSERT INTO eng_hwrestart VALUES ('fresh')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(1));
+}
+
+//A DELETE or UPDATE that matches nothing, or touches another column, changes no id
+TEST_F(EngineTest, AutoIncrementCounterIgnoresStatementsThatKeepTheIds) {
+    engine->query("CREATE TABLE eng_hwkeep (id INT AUTOINCREMENT, name STRING)");
+    engine->query("INSERT INTO eng_hwkeep VALUES ('a')");
+    engine->query("INSERT INTO eng_hwkeep VALUES ('b')");
+
+    engine->query("DELETE FROM eng_hwkeep WHERE name = 'nobody'");
+    engine->query("UPDATE eng_hwkeep SET name = 'z' WHERE id = 2");
+    engine->query("INSERT INTO eng_hwkeep VALUES ('c')");
+    EXPECT_EQ(engine->getLastInsertId(), std::optional<long long>(3));
+}

@@ -270,3 +270,48 @@ TEST_F(CatalogTest, CatalogWithoutFlagsHasNoUniqueColumns) {
     EXPECT_FALSE(cols[0].unique);
     EXPECT_FALSE(cols[0].auto_increment);
 }
+
+// Test: the AUTOINCREMENT high-water mark is saved with the table and only ever goes up
+TEST_F(CatalogTest, AutoHighWaterIsPersistedAndNeverDecreases) {
+    {
+        Catalog catalog(catFile);
+        Columns id;   id.name = "id";   id.type = "INT"; id.unique = true; id.auto_increment = true;
+        Columns name; name.name = "name"; name.type = "STRING";
+        ASSERT_TRUE(catalog.createTable("hw", {id, name}));
+        EXPECT_EQ(catalog.getColumns("hw")[0].autoHighWater, 0);
+
+        catalog.raiseAutoHighWater("hw", 7);
+        EXPECT_EQ(catalog.getColumns("hw")[0].autoHighWater, 7);
+        catalog.raiseAutoHighWater("hw", 3);     // lower: ignored
+        EXPECT_EQ(catalog.getColumns("hw")[0].autoHighWater, 7);
+    }
+
+    Catalog reloaded(catFile);
+    auto cols = reloaded.getColumns("hw");
+    ASSERT_EQ(cols.size(), 2u);
+    EXPECT_TRUE(cols[0].auto_increment);
+    EXPECT_EQ(cols[0].autoHighWater, 7);
+    EXPECT_EQ(cols[1].autoHighWater, 0);
+}
+
+// Test: raising the mark of an unknown table, or of one without an AUTOINCREMENT column, does nothing
+TEST_F(CatalogTest, RaiseAutoHighWaterIgnoresOtherTables) {
+    Catalog catalog(catFile);
+    ASSERT_TRUE(catalog.createTable("plain", {{"id", "INT", true}, {"name", "STRING"}}));
+    EXPECT_NO_THROW(catalog.raiseAutoHighWater("missing", 5));
+    EXPECT_NO_THROW(catalog.raiseAutoHighWater("plain", 5));
+    EXPECT_EQ(catalog.getColumns("plain")[0].autoHighWater, 0);
+}
+
+// Test: a hand-written catalog line carries the mark, and a garbage mark is ignored
+TEST_F(CatalogTest, HighWaterMarkIsReadFromTheFile) {
+    {
+        std::ofstream f(catFile);
+        f << "t|1|id INT auto_increment hwm=41|name STRING" << "\n";
+        f << "u|2|id INT auto_increment hwm=abc|name STRING" << "\n";
+    }
+    Catalog catalog(catFile);
+    EXPECT_EQ(catalog.getColumns("t")[0].autoHighWater, 41);
+    EXPECT_TRUE(catalog.getColumns("u")[0].auto_increment);
+    EXPECT_EQ(catalog.getColumns("u")[0].autoHighWater, 0);
+}

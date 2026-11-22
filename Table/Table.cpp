@@ -474,7 +474,8 @@ void Table::trackAutoValue(const Row &row)
 void Table::rebuildIndex()
 {
     index.clear();
-    maxAuto = 0;
+    // Start from the high-water mark kept in the catalog; the rows can only raise it
+    maxAuto = autoCol >= 0 ? scheme[autoCol].autoHighWater : 0;
     std::vector<int> pageIds = pageManager.getPageIds();
     int globalRowCounter = 0;
 

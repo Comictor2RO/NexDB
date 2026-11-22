@@ -28,6 +28,25 @@ bool Catalog::createTable(const std::string &name, const std::vector<Columns> &c
     return true;
 }
 
+void Catalog::raiseAutoHighWater(const std::string &table, long long value)
+{
+    std::unique_lock lock(mutex);
+    auto it = columns.find(table);
+    if (it == columns.end())
+        return;
+    for (Columns &c : it->second)
+    {
+        if (!c.auto_increment)
+            continue;
+        if (value > c.autoHighWater)
+        {
+            c.autoHighWater = value;
+            save();
+        }
+        return;
+    }
+}
+
 void Catalog::dropTable(const std::string &name)
 {
     std::unique_lock lock(mutex);
@@ -98,6 +117,10 @@ void Catalog::load()
                         c.unique = true;
                         c.auto_increment = true;
                     }
+                    else if (pair[i].rfind("hwm=", 0) == 0) {
+                        try { c.autoHighWater = std::stoll(pair[i].substr(4)); }
+                        catch (...) {}
+                    }
                 }
                 cols.push_back(c);
             }
@@ -133,7 +156,11 @@ void Catalog::save()
             f << "|" << c.name << " " << c.type;
             // auto_increment implies unique, so one flag word is enough
             if (c.auto_increment)
+            {
                 f << " auto_increment";
+                if (c.autoHighWater > 0)
+                    f << " hwm=" << c.autoHighWater;
+            }
             else if (c.unique)
                 f << " unique";
         }

@@ -81,7 +81,12 @@ ambiguități de delimitatori, extensibil (poți adăuga câmpuri fără breakin
     NULL nu e duplicat. Rescrierea (`insertRow(row, false)`) și replay-ul WAL nu verifică.
   - **`AUTOINCREMENT`:** doar INT, cel mult o coloană (erori la `CREATE TABLE`). Valoarea = maximul din coloană + 1,
     calculat în `rebuildIndex`; generată în `Engine::executeInsert` înainte de `checkRow` și de WAL, deci replay-ul
-    dă același id. Contorul nu e persistat: id-ul cel mai mare șters se refolosește. `UPDATE ... SET id = NULL` e eroare.
+    dă același id. **Contor persistent (nu se refolosesc id-uri):** valoarea = max(`hwm` din catalog, maximul din rânduri) + 1.
+    `hwm` (`Columns::autoHighWater`, scris `hwm=N` după `auto_increment` în `.cat`) se ridică prin
+    `Catalog::raiseAutoHighWater` înainte de WAL, în `executeDelete` și în `executeUpdate` (doar dacă atribuie coloana
+    autoincrement), adică exact înainte ca rândul cu maximul să poată dispărea; `INSERT` nu scrie catalogul. Nu coboară
+    niciodată; `DROP TABLE` îl uită. O cădere între salvarea catalogului și WAL lasă cel mult un gol, niciodată un id refolosit.
+    `UPDATE ... SET id = NULL` e eroare.
   - **`UPDATE`:** verificarea de duplicat acoperă orice coloană `UNIQUE` atribuită, nu doar cheia.
   - **Protocol:** `"insert_id"` în `{"type":"ok","affected":1,"insert_id":N}` doar pentru tabele cu `AUTOINCREMENT`
     (`Engine::getLastInsertId`); `PROTOCOL_VERSION` rămâne `1.0.0`. Mesajul de duplicat numește coloana și valoarea:

@@ -484,3 +484,25 @@ TEST_F(TableTest, NextAutoValueIsHighestPlusOne) {
     Table reopened("test_auto", schema, *storage, tableId);
     EXPECT_EQ(reopened.nextAutoValue(), 6);
 }
+
+// Test 26: the next AUTOINCREMENT value starts from the stored high-water mark, even on an empty
+// table, and the rows can only raise it
+TEST_F(TableTest, NextAutoValueStartsFromTheHighWaterMark) {
+    Columns id;   id.name = "id";   id.type = "INT"; id.unique = true; id.auto_increment = true;
+    id.autoHighWater = 7;
+    Columns name; name.name = "name"; name.type = "STRING";
+    std::vector<Columns> schema = {id, name};
+    const int tableId = nextTableId;
+    Table table = makeTable("test_auto_hwm", schema);
+
+    EXPECT_EQ(table.autoMax(), 7);
+    EXPECT_EQ(table.nextAutoValue(), 8);
+
+    ASSERT_TRUE(table.insertRow({{"3", "low"}}).has_value());     // below the mark: no change
+    EXPECT_EQ(table.nextAutoValue(), 8);
+    ASSERT_TRUE(table.insertRow({{"20", "high"}}).has_value());   // above it: the rows win
+    EXPECT_EQ(table.nextAutoValue(), 21);
+
+    Table reopened("test_auto_hwm", schema, *storage, tableId);
+    EXPECT_EQ(reopened.nextAutoValue(), 21);
+}

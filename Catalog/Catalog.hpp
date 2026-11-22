@@ -17,6 +17,10 @@ class Catalog {
         bool createTable(const std::string &name, const std::vector<Columns> &columns);
         bool tableExists(const std::string &name) const;
         void dropTable(const std::string &name);
+        // Raises the AUTOINCREMENT high-water mark of the table to value and saves the catalog,
+        // but only if value is higher than the stored mark (it never goes down). No-op for an
+        // unknown table or one without an AUTOINCREMENT column.
+        void raiseAutoHighWater(const std::string &table, long long value);
 
         //Getter
         std::vector<Columns> getColumns(const std::string &name) const;

@@ -149,8 +149,8 @@ A column can now be declared `UNIQUE`, and an `INT` column `AUTOINCREMENT`:
 `CREATE TABLE accounts (id INT AUTOINCREMENT, email STRING UNIQUE, name STRING)`. A table has a
 key only if one of its columns says so: **the first `UNIQUE INT` column is the key** and is indexed;
 before, column 0 was a key whenever it was `INT`, with no way to turn that off. Leave an
-`AUTOINCREMENT` column out of an `INSERT` (or give it `NULL`) and it gets the highest value + 1; the
-network answer then carries it as `"insert_id"`. See *Names* under *Supported SQL* for the exact rules.
+`AUTOINCREMENT` column out of an `INSERT` (or give it `NULL`) and it gets one past the highest id the
+table ever held, and an id is never handed out twice; the network answer carries it as `"insert_id"`. See *Names* under *Supported SQL* for the exact rules.
 **Existing databases are not migrated**: a `.cat` file written by an older version has no flags, so
 its tables have no key. Create the tables again (or delete the old `.db`, `.cat` and `.wal` files).
 
@@ -626,10 +626,17 @@ Values compare like `WHERE =` does: `007` and `7` collide, `1.0` and `1` collide
 collide, text compares byte for byte (`'a'` and `'A'` differ). `NULL` is allowed any number of times.
 A table with no `UNIQUE` column has no key and accepts duplicates.
 `AUTOINCREMENT` is only for `INT` columns, at most one per table, and implies `UNIQUE`. An `INSERT`
-that omits the column, or gives `NULL`, stores the highest value in the column + 1 (1 in an empty
-table); a value given explicitly is kept, must be unique, and moves the counter. The counter is the
-current maximum, so deleting the row with the highest id hands that id out again. `UPDATE ... SET
-id = NULL` on an `AUTOINCREMENT` column is an error.
+that omits the column, or gives `NULL`, stores one past the highest value the column has ever held
+(1 in a new table). Without a column list the column can simply be left out when the values are one short:
+`INSERT INTO products VALUES ('milk')` for `(id INT AUTOINCREMENT, name STRING)`; the full form
+`VALUES (1, 'milk')` still works. A value given explicitly is kept, must be unique, and moves the counter.
+**Ids are never reused:** deleting a row, even the one with the highest id or every row, does not bring
+its id back, and neither does an `UPDATE` that changes the id. The highest id ever held is kept in the
+catalog (`hwm=` after `auto_increment` in the `.cat` file); it is written before a `DELETE` or an
+`UPDATE` of that column can remove the row that holds it, so it survives a restart and a crash. Plain
+`INSERT`s do not touch the catalog, since the rows themselves hold the maximum. `DROP TABLE` forgets
+the counter, so a table created again starts from 1. `UPDATE ... SET id = NULL` on an
+`AUTOINCREMENT` column is an error.
 The first `UNIQUE INT` column is the table's key and is indexed by a B+ tree (`WHERE key = n` takes
 the index); other `UNIQUE` columns are checked by a scan.
 
